@@ -8,6 +8,11 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 - Di HP (WiFi yang sama): buka alamat `http://192.168.x.x:3000` yang tampil di terminal dan di lobby.
 - Pemain pertama yang masuk jadi host dan menekan MULAI GAME.
 
+## Mode
+- **Main Sendiri** — ruang pribadi berisi bot (jumlah dan tingkat kesulitan bisa diatur).
+- **Multiplayer WiFi** — semua pemain di WiFi yang sama masuk ke ruang yang sama.
+- **Online** — belum ada; server sudah mendukung beberapa ruang (`createRoom` di `server.js`), tinggal ditambah ruang berkode dan hosting.
+
 ## Struktur
 - `server.js` — server file + WebSocket: lobby, ronde, simulasi bot, kekuatan dewa, apel emas.
 - `public/js/sim.js` — fisika karakter, AI bot, kekuatan dewa (dipakai browser dan server).

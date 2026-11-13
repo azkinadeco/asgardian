@@ -125,6 +125,16 @@
   .mbtn:hover { filter:brightness(1.05); } .mbtn:active { transform:translateY(3px); box-shadow:0 2px 0 #d9b24a; }
   .mbtn:disabled { background:#e6e2ee; box-shadow:0 5px 0 #c9c3d6; opacity:.7; cursor:default; }
   .link { background:none; border:0; font:inherit; font-size:13px; color:var(--ink); opacity:.7; cursor:pointer; padding:0 0 4px; }
+  #diffBtns button { width:auto; padding:0 10px; font-size:13px; background:#cfc8e2; color:var(--ink); }
+  #diffBtns button.on { background:var(--ink); color:#fff; }
+  #loading { position:fixed; inset:0; z-index:9; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:linear-gradient(#3a7bd5,#ffe9c9); color:#fff; font-size:15px; transition:opacity .4s; }
+  #loading.done { opacity:0; pointer-events:none; }
+  #loading h1 { font-size:42px; }
+  #loadBar { width:min(70vw,320px); height:14px; border-radius:8px; background:rgba(42,30,74,.35); overflow:hidden; box-shadow:0 0 0 3px rgba(255,255,255,.5); }
+  #loadFill { height:100%; width:8%; background:linear-gradient(#ffe58a,#f2a93b); transition:width .3s; }
+  #end .names span img { width:20px; height:20px; border-radius:50%; vertical-align:-4px; margin-right:4px; background:linear-gradient(#bfe3ff,#fff0c9); }
+  #quitBtn { position:fixed; z-index:5; top:max(8px,env(safe-area-inset-top)); left:max(8px,env(safe-area-inset-left)); width:42px; height:42px; border-radius:50%; border:0; background:rgba(42,30,74,.72); font-size:19px; cursor:pointer; touch-action:manipulation; }
+  #top { padding-left:58px !important; }
   #btnAb.cd { filter:grayscale(1); opacity:.6; }
   #power { margin:-6px 0 12px; background:#2a1e4a; color:#fff; border-radius:12px; padding:8px 12px; font-size:13px; }
   #power b { color:var(--gold); }
@@ -134,9 +144,11 @@
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="loading"><h1>ASGARDIAN</h1><div id="loadBar"><div id="loadFill"></div></div><div id="loadTxt">Memuat para dewa...</div></div>
 
 <button id="muteBtn" title="Suara">🔊</button>
 <button id="setBtn" title="Pengaturan">⚙️</button>
+<button id="quitBtn" title="Keluar dari game" class="hidden">🚪</button>
 <div id="settings" class="hidden">
   <b>Pengaturan</b>
   <div class="row"><span>Grafik</span><select id="optQ"><option value="auto">Otomatis</option><option value="high">Tinggi</option><option value="med">Sedang</option><option value="low">Rendah</option></select></div>
@@ -190,6 +202,7 @@
     </details>
     <div class="row"><span>Bot pengisi arena</span>
       <span class="step"><button id="botMinus">−</button><b id="botN">5</b><button id="botPlus">+</button></span></div>
+    <div class="row" id="diffRow"><span>Kesulitan bot</span><span class="step" id="diffBtns"><button data-d="0">Mudah</button><button data-d="1">Normal</button><button data-d="2">Sulit</button></span></div>
     <button id="startBtn" class="btn">MULAI GAME</button>
     <div class="note" id="lobbyNote"></div>
   </div>

@@ -35,7 +35,7 @@ Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, n
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05;
 const SUN_OFF = new THREE.Vector3(-28, 52, 16);
 const quality = { acc: 0, n: 0, level: 3, mode: 'auto' };
-const BASE_DPR = Math.min(window.devicePixelRatio || 1, IS_TOUCH ? 1.5 : 2);
+const BASE_DPR = Math.min(window.devicePixelRatio || 1, 1.5);
 renderer.setPixelRatio(BASE_DPR);
 renderer.shadowMap.autoUpdate = false; // bayangan diperbarui tiap 2 frame (lihat frame())
 // level: 3 = bayangan + resolusi penuh, 2 = bayangan + resolusi 1x, 1 = tanpa bayangan, 0 = tanpa bayangan + resolusi rendah
@@ -332,6 +332,7 @@ function show(which) {
   $('lobby').classList.toggle('hidden', which !== 'lobby');
   $('hud').classList.toggle('hidden', which === 'menu' || which === 'mode');
   document.body.classList.toggle('playing', which === 'hud');
+  $('quitBtn').classList.toggle('hidden', which !== 'hud');
   document.body.classList.toggle('inlobby', which === 'lobby');
 }
 
@@ -434,6 +435,7 @@ function pickMode(mode) {
 $('modeSolo').onclick = () => { initAudio(); pickMode('solo'); };
 $('modeLan').onclick = () => { initAudio(); pickMode('lan'); };
 $('backBtn').onclick = () => show('mode');
+$('quitBtn').onclick = () => { if (confirm('Keluar dari game ini?')) { G.leaving = true; if (ws) ws.close(); } };
 $('leaveBtn').onclick = () => { G.leaving = true; if (ws) ws.close(); };
 $('muteBtn').onclick = () => { initAudio(); setMuted(!muted); };
 $('muteBtn').textContent = muted ? '🔇' : '🔊';
@@ -460,12 +462,15 @@ $('fsBtn').onclick = () => {
 applyOpts();
 $('botMinus').onclick = () => send({ t: 'bots', n: G.botCount - 1 });
 $('botPlus').onclick = () => send({ t: 'bots', n: G.botCount + 1 });
+for (const b of $('diffBtns').children) b.onclick = () => send({ t: 'diff', d: +b.dataset.d });
 
 function renderLobby() {
   const isHost = G.hostId === G.me;
   $('plist').innerHTML = [...G.roster.values()].map(p =>
     `<li class="${p.id === G.me ? 'me' : ''}">${godIcon(p.god)}${esc(p.name)}${p.wins ? ' 👑' + p.wins : ''}${p.id === G.hostId ? '<span class="badge">HOST</span>' : ''}</li>`).join('');
   $('botN').textContent = G.botCount;
+  $('diffRow').style.visibility = isHost ? 'visible' : 'hidden';
+  for (const b of $('diffBtns').children) b.classList.toggle('on', +b.dataset.d === (G.diff ?? 1));
   $('botMinus').style.visibility = $('botPlus').style.visibility = isHost ? 'visible' : 'hidden';
   $('startBtn').classList.toggle('hidden', !isHost || G.serverPhase !== 'lobby');
   const solo = G.mode === 'solo';
@@ -483,6 +488,7 @@ function renderLobby() {
 // ------------------------------------------------------------ jaringan
 function connect(name) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onerror = () => { $('err').textContent = 'Tidak bisa terhubung ke server game. Pastikan server masih berjalan.'; };
   ws.onopen = () => { send({ t: 'join', name, god: G.god, skin: save.skin, mode: G.mode }); ping(); };
   ws.onmessage = ev => {
     let m;
@@ -508,7 +514,7 @@ const ON = {
   lobby(m) {
     G.roster = new Map(m.players.map(p => [p.id, p]));
     const hostChanged = G.hostId !== m.hostId;
-    G.hostId = m.hostId; G.botCount = m.botCount; G.serverPhase = m.phase;
+    G.hostId = m.hostId; G.botCount = m.botCount; G.serverPhase = m.phase; G.diff = m.diff;
     if (m.phase === 'lobby' && G.phase !== 'lobby') { G.phase = 'lobby'; show('lobby'); enterLobbyScene(); }
     else if (G.phase === 'menu' && G.me) { G.phase = 'lobby'; show('lobby'); enterLobbyScene(); }
     if (G.phase === 'lobby') syncLobbyEnts();
@@ -535,7 +541,7 @@ const ON = {
   finished(m) {
     const e = G.ents.get(m.id);
     G.fin = m.n;
-    if (e) { burst(e.pos, CONFETTI, 24, 8); deactivate(e); }
+    if (e) { burst(e.pos, CONFETTI, 36, 10); for (const sx of [-5, 5]) burst(tmpV.set(e.pos.x + sx, e.pos.y + 1, e.pos.z), CONFETTI, 18, 12); ring(e.pos, 0xffe07a, 5); if (m.id !== G.me) SFX.cheer(); deactivate(e); }
     if (m.id === G.me) { flash('LOLOS!', 1800); SFX.win(); }
   },
   dead(m) {
@@ -580,7 +586,7 @@ const ON = {
     $('endTitle').textContent = m.final ? (m.winner ? `👑 ${nameOf(m.winner)}` : 'Tidak ada pemenang') : 'YANG LOLOS';
     $('endYou').textContent = m.final ? (m.winner === G.me ? 'KAMU DEWA TERTINGGI!' : m.winner ? 'adalah Dewa Tertinggi!' : '')
       : !was ? '' : iq ? '✅ KAMU LOLOS!' : '❌ KAMU TERELIMINASI';
-    $('endNames').innerHTML = (m.final ? '' : m.qualified.map(id => `<span>${esc(nameOf(id))}</span>`).join(''))
+    $('endNames').innerHTML = (m.final ? '' : m.qualified.map(id => `<span>${PORTRAITS[(G.roster.get(id) || {}).god] ? `<img src="${PORTRAITS[G.roster.get(id).god]}" alt="">` : ''}${esc(nameOf(id))}</span>`).join(''))
       + (m.over && !m.final ? '<br>Semua pemain tereliminasi — kembali ke lobby.' : m.over ? '<br>Kembali ke lobby...' : '<br>Ronde berikutnya segera dimulai...');
     if (was) {
       const gain = 5 + (iq ? 15 : 0) + (m.final && m.winner === G.me ? 60 : 0);
@@ -664,7 +670,10 @@ function setLights(key) {
 function prepLevel(L) {
   L.group.traverse(o => {
     if (!o.isMesh || o.material.transparent || o.material.isMeshBasicMaterial) return;
-    o.castShadow = o.receiveShadow = true;
+    o.receiveShadow = true;
+    // hanya benda di sekitar lintasan yang membuat bayangan (hiasan jauh tidak perlu)
+    o.getWorldPosition(tmpV);
+    o.castShadow = Math.abs(tmpV.x) < 20 && tmpV.y > -4 && tmpV.y < 40;
   });
   scene.add(L.group);
   setSky(L.sky, L.fog);
@@ -846,7 +855,7 @@ function tickGame(dt, now) {
       if (e.fx) {
         if (e.fx === 'jump') { if (mine) { SFX.jump(); jumpBuf = 0; } burst(e.pos, [0xffffff], 4, 2.5); e.sq = 1.28; }
         else if (e.fx === 'land') { e.sq = 0.74; burst(e.pos, [0xffffff, 0xf2efe6], 5, 2.2); if (mine) { SFX.land(); cam.dip = 0.25; } }
-        else if (e.fx === 'hit') { if (mine) { SFX.hit(); cam.shake = 0.45; } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); }
+        else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { SFX.hit(); cam.shake = 0.45; } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); }
         else if (e.fx === 'dive' && mine) SFX.dive();
         else if (e.fx === 'block') { ring(e.pos, 0xb9a6ff, 1.6); if (mine) beep(900, 0.08, 'sine', 0.06); }
         else if (e.fx === 'respawn') { if (mine) SFX.respawn(); burst(e.pos, [0x9ff0ff, 0xffffff], 10, 4); }
@@ -865,7 +874,9 @@ function tickGame(dt, now) {
     e.model.position.copy(e.pos);
     e.model.rotation.y = e.yaw;
     // remote: tebak lompat/mendarat dari perubahan animasi
-    if (!e.local && e.anim !== e.prevAnim) { if (e.anim === 2) e.sq = 1.25; else if (e.prevAnim === 2) e.sq = 0.78; }
+    if (!e.local && e.anim !== e.prevAnim) { if (e.anim === 2) e.sq = 1.25; else if (e.prevAnim === 2) e.sq = 0.78; if (e.anim === 4) { e.flashT = 0.18; burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 10, 6); } }
+    // kilat putih sesaat ketika terpental
+    if (e.flashT > 0 || e.flashOn) { e.flashT = (e.flashT || 0) - dt; const on = e.flashT > 0; if (on !== e.flashOn) { e.flashOn = on; e.model.traverse(n => { if (n.isSkinnedMesh && n.material.emissive) n.material.emissive.setScalar(on ? 0.55 : 0); }); } }
     e.prevAnim = e.anim;
     if (e.auraT > 0) {
       e.auraT -= dt;
@@ -1063,9 +1074,12 @@ function endTest() {
 if (QS.has('shot')) setTimeout(endTest, (+QS.get('ttl') || 45) * 1000);
 let frameCount = 0;
 const perf = { acc: 0, n: 0 };
-if (QS.has('shot')) setInterval(() => (report(`hb frames=${frameCount} ms=${perf.n ? (perf.acc / perf.n).toFixed(1) : '-'} q=${quality.level} vis=${document.visibilityState} phase=${G.phase}`), perf.acc = perf.n = 0), 5000);
+if (QS.has('shot')) setInterval(() => (report(`hb frames=${frameCount} calls=${renderer.info.render.calls} tris=${renderer.info.render.triangles} ms=${perf.n ? (perf.acc / perf.n).toFixed(1) : '-'} q=${quality.level} vis=${document.visibilityState} phase=${G.phase}`), perf.acc = perf.n = 0), 5000);
 const shot = { on: QS.has('shot'), every: (+QS.get('shot') || 4) * 1000, next: 2500, n: 0 };
-Promise.allSettled([loadGodAssets(), loadProps()]).then(rs => { report('assets ' + rs.map(r => r.status + (r.reason ? ' ' + (r.reason.stack || r.reason) : '')).join(' | ')); makePortraits(); renderGods(); if (G.me) renderLobby(); if (G.phase === 'menu') buildPreview(); });
+$('loadFill').style.width = '35%';
+Promise.allSettled([loadGodAssets().then(r => { $('loadFill').style.width = '70%'; return r; }), loadProps()]).then(rs => {
+  $('loadFill').style.width = '100%'; setTimeout(() => $('loading').classList.add('done'), 250);
+  if (rs.some(r => r.status !== 'fulfilled')) $('loadTxt').textContent = 'Sebagian aset gagal dimuat — game tetap jalan dengan tampilan sederhana.'; report('assets ' + rs.map(r => r.status + (r.reason ? ' ' + (r.reason.stack || r.reason) : '')).join(' | ')); makePortraits(); renderGods(); if (G.me) renderLobby(); if (G.phase === 'menu') buildPreview(); });
 if (QS.has('auto')) {
   pickMode(QS.get('mode') === 'solo' ? 'solo' : 'lan');
   $('name').value = 'Tester';

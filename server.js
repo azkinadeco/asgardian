@@ -97,14 +97,14 @@ function send(ws, m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m))
 // tiap pemain mode main-sendiri mendapat ruang pribadi. (Mode online nanti cukup menambah ruang berkode.)
 function createRoom(roomId, opts = {}) {
   const players = new Map(); // id -> {id,name,god,bot,ws,state}
-  let hostId = null, phase = 'lobby', botCount = opts.solo ? 7 : 5, round = null, timers = [], plan = [0, 1, 2];
+  let hostId = null, phase = 'lobby', botCount = opts.solo ? 7 : 5, round = null, timers = [], plan = [0, 1, 2], diff = 1; // diff: 0 mudah, 1 normal, 2 sulit
 
   function broadcast(m) {
     const s = JSON.stringify(m);
     for (const p of players.values()) if (p.ws && p.ws.readyState === 1) p.ws.send(s);
   }
   function roster() { return [...players.values()].map(p => ({ id: p.id, name: p.name, god: p.god, skin: p.skin || 'default', bot: !!p.bot, wins: wins.get(p.name) || 0 })); }
-  function lobbyMsg() { broadcast({ t: 'lobby', players: roster(), hostId, botCount, phase }); }
+  function lobbyMsg() { broadcast({ t: 'lobby', players: roster(), hostId, botCount, phase, diff }); }
   function humans() { return [...players.values()].filter(p => !p.bot); }
   function later(fn, ms) {
     const h = setTimeout(() => { timers = timers.filter(x => x !== h); fn(); }, ms);
@@ -128,7 +128,8 @@ function createRoom(roomId, opts = {}) {
     for (let i = 0; i < botCount; i++) {
       const id = 'b' + nextId++;
       const god = pool[i % pool.length];
-      players.set(id, { id, name: 'Bot ' + god[0].toUpperCase() + god.slice(1), god, bot: true, ws: null, state: null });
+      const nick = { zeus: 'Si Petir', poseidon: 'Si Ombak', athena: 'Si Bijak', hades: 'Si Bayang', apollo: 'Si Surya', ares: 'Si Amuk', hermes: 'Si Kilat', thor: 'Si Guntur', loki: 'Si Jahil', odin: 'Si Gagak' }[god];
+      players.set(id, { id, name: nick + (i >= pool.length ? ' ' + (Math.floor(i / pool.length) + 1) : ''), god, bot: true, ws: null, state: null });
     }
     phase = 'playing';
     startRound(0, [...players.keys()]);
@@ -153,6 +154,8 @@ function createRoom(roomId, opts = {}) {
           if (!p || !p.bot) return;
           const e = SIM.newEnt(id);
           e.god = p.god; e.ai = SIM.newAI();
+          // kesulitan: kecepatan & kelihaian bot
+          e.ai.speed = Math.min(1, e.ai.speed + [-0.12, 0, 0.1][diff]); e.ai.skill = Math.min(1, Math.max(0, e.ai.skill + [-0.3, 0, 0.35][diff]));
           SIM.spawnAt(e, round.L, i, n);
           round.bots.set(id, e);
         });
@@ -306,6 +309,7 @@ function createRoom(roomId, opts = {}) {
       botCount = Math.max(opts.solo ? 1 : 0, Math.min(11, m.n | 0));
       lobbyMsg();
     },
+    diff(ws, m) { if (ws.pid === hostId && phase === 'lobby') { diff = Math.max(0, Math.min(2, m.d | 0)); lobbyMsg(); } },
     start(ws, m) { if (ws.pid === hostId) startGame(m.level); },
     s(ws, m) {
       if ((!round && phase !== 'lobby') || !ws.pid || !Array.isArray(m.e)) return;
