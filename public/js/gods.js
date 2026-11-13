@@ -202,7 +202,7 @@ function makeRigged(def) {
   const inst = skClone(TPL.scene), bones = {};
   rig.add(inst);
   const bodyMat = rim(new THREE.MeshToonMaterial({ map: palette(def), gradientMap: gradMap() }));
-  let skinned = null;
+  let skinned = null, outlineRef = null;
   inst.traverse(o => {
     if (o.isBone) bones[o.name] = o;
     if (o.isSkinnedMesh) { o.material = bodyMat; o.frustumCulled = false; o.castShadow = true; skinned = o; }
@@ -212,6 +212,7 @@ function makeRigged(def) {
     ol.bind(skinned.skeleton, skinned.bindMatrix);
     ol.frustumCulled = false;
     skinned.parent.add(ol);
+    outlineRef = ol;
   }
   // jangkar: anak-anaknya memakai koordinat model (y atas, +z depan) tapi ikut gerak tulang
   const anchor = name => {
@@ -255,7 +256,31 @@ function makeRigged(def) {
   if (def.head !== 'helmet' && !hairP) add(new THREE.SphereGeometry(0.485, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2.4), hair, 0, 0.0, -0.03, head);
   if (def.beard) { smile.visible = false; if (!beardP) { const b = add(new THREE.SphereGeometry(0.3, 14, 10), hair, 0, -0.27, 0.2, face); b.scale.set(1.15, 0.85, 0.7); } }
 
-  if (def.head === 'laurel') {
+  // hiasan kepala & senjata dari Blender (warna bisa diganti per nama material)
+  const toon = (o, colors) => {
+    o.traverse(n => {
+      if (!n.isMesh) return;
+      const nm = n.material.name, c = colors && colors[nm] !== undefined ? colors[nm] : n.material.color;
+      n.material = M(c, Object.assign({ side: THREE.DoubleSide }, nm === 'bolt' || nm === 'flame' ? { emissive: c, emissiveIntensity: 0.55 } : null));
+      n.castShadow = true;
+    });
+    return o;
+  };
+  const gear = (name, colors) => { const o = prop(name); if (!o) return null; toon(o, colors); o.position.y = 1.3; headAnchor.add(o); return o; };
+  let geared = false;
+  if (def.head === 'laurel') { const l = gear('acc_laurel'); if (l) { l.scale.setScalar(hairP ? 1.1 : 1); geared = true; } }
+  else if (def.head === 'crown') geared = !!gear('acc_crown');
+  else if (def.head === 'helmet') geared = !!gear('acc_helmet', { metal: def.metal, crest: def.crest });
+  else if (def.head === 'flame') geared = !!gear('acc_flame', { flame: def.hair });
+  else if (def.head === 'wings') {
+    const w1 = gear('acc_wing'), w2 = gear('acc_wing');
+    if (w1 && w2) {
+      w1.position.set(0.4, 1.5, -0.04); w2.position.set(-0.4, 1.5, -0.04); w2.scale.x = -1;
+      add(new THREE.CylinderGeometry(0.47, 0.48, 0.09, 20), M(0xc9d2e0), 0, 0.2, 0, head);
+      geared = true;
+    }
+  }
+  if (geared) { /* aset Blender terpasang */ } else if (def.head === 'laurel') {
     const l = add(new THREE.TorusGeometry(0.44, 0.055, 8, 20), gold, 0, 0.2, 0, head);
     l.rotation.set(Math.PI / 2 - 0.2, 0, 0);
   } else if (def.head === 'crown') {
@@ -279,7 +304,9 @@ function makeRigged(def) {
     it.position.set(-0.74, 0.6, 0.1);
     anchor('armR').add(it);
     const steel = M(0xb8bec8), wood = M(0x8a5a2b);
-    if (def.item === 'bolt') {
+    const wp = prop('acc_' + def.item);
+    if (wp) { toon(wp); wp.scale.setScalar(0.92); it.add(wp); }
+    else if (def.item === 'bolt') {
       const bm = M(0xffe04a, { emissive: 0xffc400, emissiveIntensity: 0.8 });
       add(new THREE.BoxGeometry(0.1, 0.42, 0.1), bm, 0.06, 0.62, 0, it).rotation.z = 0.5;
       add(new THREE.BoxGeometry(0.1, 0.42, 0.1), bm, -0.04, 0.32, 0, it).rotation.z = -0.5;
@@ -296,7 +323,7 @@ function makeRigged(def) {
       }
     }
   }
-  g.userData = { rig, bones, eyes, shines, smile, seed: Math.random() * 10, phase: 0, lastT: 0,
+  g.userData = { rig, bones, eyes, shines, smile, outline: outlineRef, seed: Math.random() * 10, phase: 0, lastT: 0,
     st: { ll: 0, lr: 0, al: 0, ar: 0, azl: 0, azr: 0, hx: 0, hy: 0, bx: 0, by: 0, eye: 1.5, spin: 0 } };
   return g;
 }
@@ -344,6 +371,11 @@ function animateRig(g, anim, t, extra) {
   } else if (anim === 5) { // sorak: lompat-lompat, tangan melambai
     const h = Math.abs(Math.sin(t * 8));
     azl = 1.7 + Math.sin(t * 16) * 0.32; azr = 1.7 - Math.sin(t * 16) * 0.32; by = h * 0.34; ll = 0.3 * h; lr = -0.3 * h; hx = -0.22; rz = Math.sin(t * 8) * 0.1; eye = 0.7; sy = 1 + h * 0.05;
+  } else if (anim === 6) { // kecewa: menunduk, bahu turun
+    hx = 0.5; bx = 0.22; azl = azr = 0.0; al = ar = 0.15; rz = Math.sin(t * 1.4 + sd) * 0.04; eye = 0.8; sy = 0.97;
+  } else if (anim === 7) { // siap-siap sebelum start: kuda-kuda sambil memantul
+    const h = Math.abs(Math.sin(t * 7 + sd));
+    bx = 0.3; hx = -0.25; al = 0.7; ar = -0.5; azl = azr = 0.35; ll = -0.35; lr = 0.3; by = h * 0.06; sy = 0.95 + h * 0.03;
   } else { // diam: bernapas, menoleh, memindah tumpuan
     const br = Math.sin(t * 2.2 + sd);
     sy = 1 + br * 0.018; by = 0; azl = azr = 0.1 + br * 0.05;

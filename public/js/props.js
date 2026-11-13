@@ -12,7 +12,7 @@ export async function loadProps(src) {
     o.traverse(m => {
       if (!m.isMesh) return;
       const s = m.material;
-      if (!cache.has(s)) cache.set(s, new THREE.MeshPhongMaterial({ color: s.color.clone(), emissive: s.emissive ? s.emissive.clone().multiplyScalar(0.35) : 0, shininess: 25, specular: 0x222222 }));
+      if (!cache.has(s)) cache.set(s, new THREE.MeshPhongMaterial({ name: s.name, color: s.color.clone(), emissive: s.emissive ? s.emissive.clone().multiplyScalar(0.35) : 0, side: THREE.DoubleSide, shininess: 25, specular: 0x222222 }));
       m.material = cache.get(s);
     });
     o.position.set(0, 0, 0);

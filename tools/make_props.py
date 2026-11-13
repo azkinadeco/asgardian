@@ -23,7 +23,8 @@ def mat(name, rgb, emit=0.0):
 def hexc(h): return tuple(((h >> s) & 255) / 255 for s in (16, 8, 0))
 C = dict(marble=hexc(0xf4efe6), gold=hexc(0xf2c14e), cream=hexc(0xf7e3a1), rock=hexc(0x7a6a5c), dirt=hexc(0xa77b52), stone=hexc(0x8d8478),
          white=(1, 1, 1), leaf=hexc(0x3f9b4b), leaf2=hexc(0x58b84f), trunk=hexc(0x7a5230), roof=hexc(0xd9694a), win=hexc(0x3b6fe0),
-         coral=hexc(0xff8a7a), crystal=hexc(0x7de3ff), hair=hexc(0xdddddd))
+         coral=hexc(0xff8a7a), crystal=hexc(0x7de3ff), hair=hexc(0xdddddd),
+         bolt=hexc(0xffe04a), steel=hexc(0xb8bec8), wood=hexc(0x8a5a2b), metal=hexc(0xd9a441), crest=hexc(0xd0312d), gem=hexc(0xe0344a), flame=hexc(0xff6a2b), feather=(1, 1, 1))
 
 class Build:
     def __init__(self, name): self.name = name; self.bm = bmesh.new(); self.mats = []
@@ -31,9 +32,10 @@ class Build:
         if m not in self.mats: self.mats.append(m)
         return self.mats.index(m)
     def _tag(self, n0, m):
-        self.bm.faces.ensure_lookup_table()
+        # face baru tidak selalu berada di akhir daftar, jadi tandai lewat flag `tag`
         i = self.mi(m)
-        for f in self.bm.faces[n0:]: f.material_index = i
+        for f in self.bm.faces:
+            if not f.tag: f.material_index = i; f.tag = True
     def cone(self, m, r1, r2, depth, loc, seg=12, scale=(1, 1, 1)):  # r1 bawah, r2 atas, loc = pusat alas
         n0 = len(self.bm.faces)
         mx = T(Vector(loc) + Vector((0, 0, depth / 2))) @ S((*scale, 1))
@@ -194,6 +196,113 @@ for row, (z, rad, n) in enumerate([(-0.21, 0.37, 7), (-0.30, 0.33, 7), (-0.39, 0
 bb += [(-0.08, -0.42, -0.13, 0.075), (0.08, -0.42, -0.13, 0.075), (-0.18, -0.39, -0.16, 0.07), (0.18, -0.39, -0.16, 0.07)]
 props.append(blob('beard', 'hair', bb, res=0.04, target=600))
 
+# ================================================================ aksesori dewa
+def poly_extrude(b, m, pts, thick):  # pts di bidang XZ
+    n0 = len(b.bm.faces)
+    f = b.bm.faces.new([b.bm.verts.new((x, -thick / 2, z)) for x, z in pts])
+    r = bmesh.ops.extrude_face_region(b.bm, geom=[f])
+    for v in [g for g in r['geom'] if isinstance(g, bmesh.types.BMVert)]: v.co.y += thick
+    b._tag(n0, m)
+    bmesh.ops.recalc_face_normals(b.bm, faces=b.bm.faces[:])
+RZ = lambda a: Matrix.Rotation(a, 4, 'Z')
+RX = lambda a: Matrix.Rotation(a, 4, 'X')
+RY = lambda a: Matrix.Rotation(a, 4, 'Y')
+# --- senjata (pegangan di titik asal, mengarah ke +Z)
+b = Build('acc_bolt')
+poly_extrude(b, 'bolt', [(0.02, 1.0), (0.26, 1.0), (0.08, 0.55), (0.24, 0.55), (-0.1, -0.15), (-0.02, 0.38), (-0.2, 0.38)], 0.12)
+props.append(b.finish(smooth=False, bevel=0.02))
+b = Build('acc_trident')
+b.cone('gold', 0.035, 0.035, 1.75, (0, 0, -0.55), seg=8); b.sphere('gold', 0.06, (0, 0, -0.55))
+b.box('gold', (0.5, 0.07, 0.08), (0, 0, 1.2)); b.cone('gold', 0.05, 0.0, 0.42, (0, 0, 1.22), seg=8)
+for sx in (-1, 1):
+    b.cone('gold', 0.045, 0.045, 0.2, (sx * 0.22, 0, 1.2), seg=8); b.cone('gold', 0.05, 0.0, 0.3, (sx * 0.22, 0, 1.4), seg=8)
+props.append(b.finish(smooth=True))
+b = Build('acc_spear')
+b.cone('wood', 0.032, 0.032, 1.7, (0, 0, -0.55), seg=8); b.cone('gold', 0.055, 0.045, 0.1, (0, 0, 1.12), seg=8)
+b.cone('steel', 0.1, 0.0, 0.42, (0, 0, 1.2), seg=4, scale=(1, 0.35, 1)); b.cone('steel', 0.03, 0.1, 0.1, (0, 0, 1.12), seg=4, scale=(1, 0.35, 1))
+props.append(b.finish(smooth=False))
+b = Build('acc_hammer')
+b.cone('wood', 0.045, 0.04, 0.62, (0, 0, -0.1), seg=8)
+for z in (0.0, 0.12, 0.24): b.cone('gold', 0.055, 0.055, 0.035, (0, 0, z), seg=8)
+b.sphere('gold', 0.065, (0, 0, -0.12))
+b.box('steel', (0.56, 0.3, 0.3), (0, 0, 0.66))
+for sx in (-1, 1): b.box('gold', (0.07, 0.33, 0.33), (sx * 0.17, 0, 0.66))
+props.append(b.finish(smooth=True, bevel=0.035))
+# --- sayap (sisi +X; sisi lain dicerminkan di game)
+b = Build('acc_wing')
+for i, (ang, ln) in enumerate([(0.15, 0.62), (0.55, 0.56), (0.95, 0.46), (1.3, 0.34)]):
+    mx = RY(-ang) @ T(Vector((ln / 2, 0, 0))) @ S((ln / 2, 0.035, 0.11 - i * 0.012, 1))
+    n0 = len(b.bm.faces); bmesh.ops.create_uvsphere(b.bm, u_segments=10, v_segments=6, radius=1, matrix=mx); b._tag(n0, 'feather')
+b.sphere('feather', 0.1, (0.02, 0, 0.02), scale=(1, 0.5, 1))
+props.append(b.finish(smooth=True))
+# --- helm (pusat = pusat kepala, wajah di -Y)
+b = Build('acc_helmet')
+n0 = len(b.bm.faces); bmesh.ops.create_uvsphere(b.bm, u_segments=20, v_segments=12, radius=0.475); b._tag(n0, 'metal')
+bmesh.ops.delete(b.bm, geom=[v for v in b.bm.verts if v.co.z < 0.03 and not (v.co.y > 0.1 and v.co.z > -0.2) and not (abs(v.co.x) > 0.3 and v.co.y > -0.25 and v.co.z > -0.26)], context='VERTS')
+b.box('metal', (0.07, 0.05, 0.3), (0, -0.47, 0.0))                       # pelindung hidung
+# jambul: sirip lonjong dari depan ke belakang
+n0 = len(b.bm.faces); bmesh.ops.create_uvsphere(b.bm, u_segments=14, v_segments=10, radius=1, matrix=T(Vector((0, 0.04, 0.1))) @ S((0.055, 0.56, 0.6, 1)))
+bmesh.ops.delete(b.bm, geom=[v for v in b.bm.verts if not v.link_faces or (all(not f.tag for f in v.link_faces) and v.co.z < 0.3)], context='VERTS')
+b._tag(n0, 'crest')
+props.append(b.finish(smooth=True))
+# --- mahkota
+b = Build('acc_crown')
+b.cone('gold', 0.33, 0.35, 0.13, (0, 0, 0.42), seg=16)
+for i in range(8):
+    a = i / 8 * math.tau; r = 0.335
+    b.cone('gold', 0.085, 0.0, 0.2 if i % 2 else 0.13, (math.cos(a) * r, math.sin(a) * r, 0.55), seg=4)
+    if i % 2 == 0: b.sphere('gem', 0.04, (math.cos(a) * 0.35, math.sin(a) * 0.35, 0.49), seg=8)
+props.append(b.finish(smooth=False))
+# --- mahkota laurel
+b = Build('acc_laurel')
+for i in range(18):
+    a = i / 18 * math.tau
+    if abs(a - math.pi * 1.5) < 0.28: continue                           # celah di depan
+    side = 1 if math.cos(a) > 0 else -1
+    mx = T(Vector((math.cos(a) * 0.46, math.sin(a) * 0.46, 0.2 + 0.05 * math.sin(a)))) @ RZ(a + math.pi / 2 + side * 0.35 * (1 if math.sin(a) < 0 else -1)) @ RX(0.5) @ S((0.13, 0.035, 0.06, 1))
+    n0 = len(b.bm.faces); bmesh.ops.create_uvsphere(b.bm, u_segments=8, v_segments=5, radius=1, matrix=mx); b._tag(n0, 'gold')
+props.append(b.finish(smooth=True))
+# --- rambut api
+fb = []
+for (ox, oy, h, lean) in [(0, 0.02, 0.62, 0.0), (0.2, 0.05, 0.42, 0.25), (-0.2, 0.05, 0.42, -0.25), (0.05, 0.22, 0.4, 0.0), (0.0, -0.16, 0.34, 0.0)]:
+    for k in range(7):
+        t = k / 6; fb.append((ox + lean * t * 0.5 + 0.05 * math.sin(t * 5), oy + 0.05 * t, 0.26 + h * t, 0.2 * (1 - 0.72 * t)))
+for i in range(14):
+    a = i / 14 * math.tau; fb.append((math.cos(a) * 0.3, math.sin(a) * 0.3 + 0.05, 0.22, 0.17))
+props.append(blob('acc_flame', 'flame', fb, res=0.045, target=650))
+
+# ================================================================ rintangan & penanda
+b = Build('hub')                                   # poros palang berputar (tinggi 1.3)
+b.cone('stone', 1.0, 0.92, 0.26, (0, 0, 0), seg=18); b.cone('gold', 0.74, 0.62, 0.72, (0, 0, 0.26), seg=18)
+b.cone('stone', 0.82, 0.82, 0.16, (0, 0, 0.98), seg=18); b.sphere('gold', 0.5, (0, 0, 1.08), scale=(1, 1, 0.55), seg=16)
+for i in range(6):
+    a = i / 6 * math.tau; b.sphere('gem', 0.09, (math.cos(a) * 0.7, math.sin(a) * 0.7, 0.62), seg=8)
+props.append(b.finish(smooth=True))
+b = Build('pivot')                                 # gantungan palu berayun
+b.ico('gold', 0.8, (0, 0, 0.2), sub=1); b.cone('stone', 1.0, 1.0, 0.24, (0, 0, 0.1), seg=14)
+for i in range(4):
+    a = i / 4 * math.tau + 0.4; b.cone('gold', 0.16, 0.0, 0.6, (math.cos(a) * 0.95, math.sin(a) * 0.95, 0.2), seg=5)
+props.append(b.finish(smooth=False))
+b = Build('gate')                                  # gerbang finis (tiang di x = +-6.5)
+for sx in (-1, 1):
+    b.cone('marble', 0.72, 0.6, 7.0, (sx * 6.5, 0, 0), seg=14)
+    b.cone('gold', 0.95, 0.95, 0.35, (sx * 6.5, 0, 0), seg=14); b.cone('gold', 0.78, 0.78, 0.3, (sx * 6.5, 0, 3.4), seg=14); b.cone('gold', 0.6, 0.85, 0.4, (sx * 6.5, 0, 6.8), seg=14)
+b.box('gold', (14.9, 1.0, 0.95), (0, 0, 7.65))
+poly_extrude(b, 'marble', [(-7.4, 8.15), (7.4, 8.15), (0, 10.4)], 0.8)
+poly_extrude(b, 'gold', [(-2.2, 8.5), (2.2, 8.5), (0, 9.7)], 0.95)
+b.sphere('gold', 0.42, (0, 0, 10.7))
+for i in range(11):
+    x = -5.5 + i * 1.1
+    poly_extrude(b, 'crest' if i % 2 else 'win', [(x - 0.45, 7.15), (x + 0.45, 7.15), (x, 6.25)], 0.06)
+props.append(b.finish(smooth=False))
+b = Build('flag')                                  # bendera checkpoint
+b.cone('gold', 0.08, 0.06, 3.3, (0, 0, 0), seg=8); b.sphere('gold', 0.14, (0, 0, 3.35), seg=8)
+NX, NZ = 7, 3; grid = [[b.bm.verts.new((0.07 + ix / (NX - 1) * 1.35, math.sin(ix * 0.9) * 0.1 * (ix / (NX - 1)), 2.25 + iz / (NZ - 1) * 0.95 * (1 - 0.35 * ix / (NX - 1)) + 0.17 * ix / (NX - 1))) for iz in range(NZ)] for ix in range(NX)]
+for ix in range(NX - 1):
+    for iz in range(NZ - 1): b.bm.faces.new((grid[ix][iz], grid[ix + 1][iz], grid[ix + 1][iz + 1], grid[ix][iz + 1]))
+b._tag(0, 'crest')
+props.append(b.finish(smooth=True))
+
 for o in props:
     xs = [v.co for v in o.data.vertices]
     print('PROP %-8s polys %5d  x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f' % (o.name, len(o.data.polygons), min(c.x for c in xs), max(c.x for c in xs), min(c.y for c in xs), max(c.y for c in xs), min(c.z for c in xs), max(c.z for c in xs)))
@@ -205,10 +314,15 @@ if argv:
     grid = {'cloud': (-9, 0, 2, 1.5), 'island': (-5.5, 0, 3, 3), 'boulder': (-2.5, 0, 1, 1), 'column': (0, 0, 0, 1), 'tower': (4.5, 4, 0, 0.6), 'tree': (2.2, 0, 0, 1.2),
             'hammer': (-9, -5, 1, 1), 'coral': (-5.5, -5, 0, 1), 'crystal': (-2.5, -5, 0, 1), 'temple': (10, 3, 0, 0.5), 'hair': (1, -5, 1, 2.5), 'beard': (3.5, -5, 1.5, 2.5)}
     for o in props:
-        x, y, z, s = grid[o.name]; o.location = (x, y, z); o.scale = (s, s, s)
+        if o.name in ('hub', 'pivot', 'gate', 'flag'):
+            x, y, z, s = {'hub': (-9, -17, 0, 2), 'pivot': (-5, -17, 1, 2), 'gate': (4, -17, 0, 0.5), 'flag': (11, -17, 0, 1.3)}[o.name]
+        elif o.name.startswith('acc_'):
+            i = [q.name for q in props if q.name.startswith('acc_')].index(o.name); x, y, z, s = -10 + i * 2.6, -11, 1, 2.2
+        else: x, y, z, s = grid[o.name]
+        o.location = (x, y, z); o.scale = (s, s, s)
     cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); scene.collection.objects.link(cam); scene.camera = cam
-    cam.location = (1, -30, 13); cam.data.lens = 50
-    cam.rotation_euler = (Vector((1, -1, 2.5)) - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    cam.location = (1, -34, 15); cam.data.lens = 50
+    cam.rotation_euler = (Vector((1, -4, 2.0)) - cam.location).to_track_quat('-Z', 'Y').to_euler()
     scene.render.engine = 'BLENDER_WORKBENCH'; scene.display.shading.light = 'STUDIO'; scene.display.shading.color_type = 'MATERIAL'
     scene.render.resolution_x = 1300; scene.render.resolution_y = 700; scene.render.filepath = argv[0]
     bpy.ops.render.render(write_still=True)

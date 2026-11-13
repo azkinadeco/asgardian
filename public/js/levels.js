@@ -200,12 +200,12 @@ function spinner(L, x, y, z, len, w, ph, color, acc = 0, kmax = 99) {
   const g = new THREE.Group();
   g.position.set(x, y, z);
   L.group.add(g);
-  mesh(new THREE.CylinderGeometry(0.7, 0.85, 1.3, 12), lam(GOLD), 0, 0.65, 0, g);
+  if (!put(g, 'hub', 0, 0, 0, 0.9)) mesh(new THREE.CylinderGeometry(0.7, 0.85, 1.3, 12), lam(GOLD), 0, 0.65, 0, g);
   const arm = new THREE.Group();
   arm.position.y = 0.5;
   g.add(arm);
   mesh(new THREE.CapsuleGeometry(0.32, len * 2 - 0.6, 6, 12), lam(color), 0, 0, 0, arm).rotation.z = Math.PI / 2;
-  for (const s of [-1, 1]) mesh(new RoundedBoxGeometry(1.1, 0.9, 1.1, 2, 0.18), lam(STEEL), s * len, 0, 0, arm);
+  for (const s of [-1, 1]) if (!put(arm, 'hammer', s * len, 0, 0, 0.5, 0.55, 0.62)) mesh(new RoundedBoxGeometry(1.1, 0.9, 1.1, 2, 0.18), lam(STEEL), s * len, 0, 0, arm);
   let a = ph, w0 = w;
   L.updaters.push(t => { const tp = Math.max(0, t); w = w0 + Math.sign(w0) * acc * tp; a = ph + w0 * (acc ? tp : t) + Math.sign(w0) * 0.5 * acc * tp * tp; arm.rotation.y = -a; });
   const local = e => {
@@ -237,7 +237,7 @@ function spinner(L, x, y, z, len, w, ph, color, acc = 0, kmax = 99) {
 // palu raksasa berayun melintang jalur
 function pendulum(L, x, y, z, w, ph) {
   const py = y + 8.2, len = 6.6, A = 1.15;
-  mesh(new THREE.OctahedronGeometry(0.9), lam(GOLD, { emissive: 0x7a5a00, flatShading: true }), x, py + 0.3, z, L.group);
+  if (!put(L.group, 'pivot', x, py, z, 1)) mesh(new THREE.OctahedronGeometry(0.9), lam(GOLD, { emissive: 0x7a5a00, flatShading: true }), x, py + 0.3, z, L.group);
   const arm = new THREE.Group();
   arm.position.set(x, py, z);
   L.group.add(arm);
@@ -383,9 +383,7 @@ function asgard(seed) {
   // pulau Valhalla
   L.addPlat(0, 0, 103, 16, 18, { rock: true });
   spinner(L, 0, 0, 102.5, 5.5, 2.2, 0.5, 0xf2c14e);
-  for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(0.7, 0.8, 7, 12), lam(GOLD), s * 6.5, 3.5, 108, g);
-  mesh(new THREE.BoxGeometry(14.6, 1, 1.2), lam(GOLD), 0, 7.5, 108, g);
-  mesh(new THREE.BoxGeometry(12, 0.06, 1.4), rainbowMat(), 0, 0.04, 108, g);
+  arch(g, 108, 0, 6.5, GOLD, true);
 
   L.cps = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 35 }, { x: 0, y: 0, z: 61.5 }, { x: 0, y: 0, z: 95 }];
   L.wps = [{ x: 0, z: 6, w: 5 }, { x: 0, z: 36, w: 4 }, { x: 0, z: 41.5, w: 1.2 }, { x: 0, z: 48, w: 0.8 }, { x: 0, z: 54.5, w: 0.8 },
@@ -599,11 +597,37 @@ function sea(L, y, color, emissive, size = 700) {
   });
   const o = { emissive: emissive || 0, shininess: 90, specular: 0x999999 };
   if (tex) { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(size / 22, size / 22); o.map = tex; o.emissiveMap = tex; }
-  const m = mesh(new THREE.PlaneGeometry(size, size, 1, 1), lam(tex ? new THREE.Color(color).multiplyScalar(1.7) : color, o), 0, y, 60, L.group);
+  const mat = lam(tex ? new THREE.Color(color).multiplyScalar(1.7) : color, o);
+  const m = mesh(new THREE.PlaneGeometry(size, size, 1, 1), mat, 0, y - 0.25, 60, L.group);
   m.rotation.x = -Math.PI / 2;
-  L.updaters.push(t => { m.position.y = y + Math.sin(t * 1.3) * 0.15; if (tex) tex.offset.set(t * 0.012, t * 0.02); });
+  L.seaY = y; L.seaColor = color;
+  // bagian tengah bergelombang (di sekitar lintasan), tepinya meredam ke permukaan datar
+  const N = 44, W = 240, wave = HAS_DOM ? new THREE.PlaneGeometry(W, W, N, N) : null;
+  let wm = null;
+  if (wave) {
+    wave.rotateX(-Math.PI / 2);
+    if (tex) { const uv = wave.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * W / 22, uv.getY(i) * W / 22); }
+    wm = mesh(wave, mat, 0, y, 50, L.group);
+  }
+  let frame = 0;
+  L.updaters.push(t => {
+    if (tex) tex.offset.set(t * 0.012, t * 0.02);
+    if (!wm || (frame++ & 1)) return;
+    const p = wave.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i), edge = Math.max(0, 1 - Math.max(Math.abs(x), Math.abs(z)) / (W / 2 - 6));
+      p.setY(i, (Math.sin(x * 0.23 + t * 1.5) * 0.28 + Math.cos(z * 0.29 + t * 1.2) * 0.22 + Math.sin((x + z) * 0.11 + t * 0.8) * 0.2) * Math.min(1, edge * 4));
+    }
+    p.needsUpdate = true;
+    wave.computeVertexNormals();
+  });
 }
 function arch(g, z, y, half, color, rainbow) {
+  if (put(g, 'gate', 0, y, z, half / 6.5, 1, 1)) {
+    mesh(new THREE.BoxGeometry(half * 2 - 1, 0.06, 1.4), rainbow ? rainbowMat() : lam(0xffffff, { emissive: 0x555555 }), 0, y + 0.04, z, g);
+    const gl = glow(g, 0, y + 3.5, z, 0xfff2c0, half * 1.5); if (gl) gl.material.opacity = 0.35;
+    return;
+  }
   for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(0.7, 0.8, 7, 12), lam(color), s * half, y + 3.5, z, g);
   mesh(new RoundedBoxGeometry(half * 2 + 1.6, 1, 1.2, 2, 0.2), lam(color), 0, y + 7.5, z, g);
   glow(g, 0, y + 4, z, 0xffffff, half * 2.2);
@@ -864,6 +888,7 @@ export function buildLevel(idx, seed) {
     if (!P) return;
     for (const s of [-1, 1]) {
       const x = P.x0 + s * (P.w / 2 - 0.35);
+      if (put(L.group, 'flag', x, cp.y, cp.z, 1, 1, 1, undefined, s > 0 ? Math.PI : 0)) continue;
       mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.2, 8), lam(GOLD), x, cp.y + 1.6, cp.z, L.group);
       const f = mesh(new THREE.ConeGeometry(0.5, 1.1, 3), lam(0xff4d6d, { emissive: 0x7a1030 }), x - s * 0.55, cp.y + 2.75, cp.z, L.group);
       f.rotation.z = s * Math.PI / 2; f.scale.z = 0.15;
