@@ -1,0 +1,14 @@
+{
+  "name": "asgardian",
+  "version": "0.1.0",
+  "description": "Asgardian - party royale para dewa (LAN multiplayer, browser)",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.18.0"
+  }
+}
