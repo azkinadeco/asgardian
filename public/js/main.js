@@ -327,9 +327,10 @@ const nameOf = id => (G.roster.get(id) || {}).name || (G.ents.get(id) || {}).nam
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function show(which) {
+  $('mode').classList.toggle('hidden', which !== 'mode');
   $('menu').classList.toggle('hidden', which !== 'menu');
   $('lobby').classList.toggle('hidden', which !== 'lobby');
-  $('hud').classList.toggle('hidden', which === 'menu');
+  $('hud').classList.toggle('hidden', which === 'menu' || which === 'mode');
   document.body.classList.toggle('playing', which === 'hud');
   document.body.classList.toggle('inlobby', which === 'lobby');
 }
@@ -420,6 +421,20 @@ $('joinBtn').onclick = () => {
 $('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('joinBtn').click(); e.stopPropagation(); });
 $('name').addEventListener('keyup', e => e.stopPropagation());
 $('startBtn').onclick = () => send({ t: 'start' });
+// pilihan mode di awal
+G.mode = 'lan';
+function pickMode(mode) {
+  G.mode = mode;
+  $('menuTitle').textContent = mode === 'solo' ? 'MAIN SENDIRI' : 'MULTIPLAYER WIFI';
+  $('menuTag').textContent = mode === 'solo' ? 'Kamu melawan bot. Pilih dewamu!' : 'Semua pemain harus di WiFi yang sama.';
+  $('joinBtn').textContent = mode === 'solo' ? 'LANJUT' : 'MASUK ARENA';
+  $('err').textContent = '';
+  show('menu'); beep(660, 0.06);
+}
+$('modeSolo').onclick = () => { initAudio(); pickMode('solo'); };
+$('modeLan').onclick = () => { initAudio(); pickMode('lan'); };
+$('backBtn').onclick = () => show('mode');
+$('leaveBtn').onclick = () => { G.leaving = true; if (ws) ws.close(); };
 $('muteBtn').onclick = () => { initAudio(); setMuted(!muted); };
 $('muteBtn').textContent = muted ? '🔇' : '🔊';
 // pengaturan (tersimpan di perangkat)
@@ -453,18 +468,22 @@ function renderLobby() {
   $('botN').textContent = G.botCount;
   $('botMinus').style.visibility = $('botPlus').style.visibility = isHost ? 'visible' : 'hidden';
   $('startBtn').classList.toggle('hidden', !isHost || G.serverPhase !== 'lobby');
+  const solo = G.mode === 'solo';
+  $('lobbyTitle').textContent = solo ? 'MAIN SENDIRI' : 'LOBBY';
+  $('addr').classList.toggle('hidden', solo);
   const lan = G.addrs.filter(a => !a.includes('127.0.0.1'));
   $('addr').innerHTML = lan.length
     ? `Ajak teman di WiFi yang sama, buka di browser HP:<br>${lan.map(a => `<b>${esc(a)}</b>`).join('<br>')}`
     : 'Server tidak menemukan alamat WiFi. Pastikan komputer tersambung ke WiFi.';
   $('lobbyNote').textContent = G.serverPhase !== 'lobby' ? 'Game sedang berlangsung — kamu ikut di game berikutnya.'
+    : solo ? 'Atur jumlah bot, lalu tekan MULAI. Sambil itu kamu bisa mencoba kontrol di pulau ini.'
     : isHost ? 'Kamu host. Tekan MULAI kalau semua sudah masuk.' : 'Menunggu host memulai game...';
 }
 
 // ------------------------------------------------------------ jaringan
 function connect(name) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => { send({ t: 'join', name, god: G.god, skin: save.skin }); ping(); };
+  ws.onopen = () => { send({ t: 'join', name, god: G.god, skin: save.skin, mode: G.mode }); ping(); };
   ws.onmessage = ev => {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
@@ -472,6 +491,7 @@ function connect(name) {
   };
   ws.onclose = () => {
     if (QS.has('shot')) return endTest();
+    if (G.leaving) { G.leaving = false; clearRound(); G.phase = 'menu'; G.me = null; show('mode'); enterMenuScene(); $('joinBtn').disabled = false; $('err').textContent = ''; return; }
     clearRound(); G.phase = 'menu'; G.me = null; show('menu'); enterMenuScene();
     $('joinBtn').disabled = false; $('err').textContent = 'Koneksi ke server terputus. Coba masuk lagi.';
   };
@@ -1047,10 +1067,11 @@ if (QS.has('shot')) setInterval(() => (report(`hb frames=${frameCount} ms=${perf
 const shot = { on: QS.has('shot'), every: (+QS.get('shot') || 4) * 1000, next: 2500, n: 0 };
 Promise.allSettled([loadGodAssets(), loadProps()]).then(rs => { report('assets ' + rs.map(r => r.status + (r.reason ? ' ' + (r.reason.stack || r.reason) : '')).join(' | ')); makePortraits(); renderGods(); if (G.me) renderLobby(); if (G.phase === 'menu') buildPreview(); });
 if (QS.has('auto')) {
+  pickMode(QS.get('mode') === 'solo' ? 'solo' : 'lan');
   $('name').value = 'Tester';
   setTimeout(() => $('joinBtn').click(), 1200);
   if (!QS.has('nostart')) { let tries = 0; const iv = setInterval(() => { if (G.phase === 'play' || ++tries > 15) return clearInterval(iv); if (G.me && G.hostId === G.me && G.phase === 'lobby') send({ t: 'start', level: QS.has('level') ? +QS.get('level') : undefined }); }, 1500); }
 }
 enterMenuScene();
-show('menu');
+if (!QS.has('auto')) show('mode');
 requestAnimationFrame(frame);
