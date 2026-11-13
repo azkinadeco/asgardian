@@ -51,7 +51,8 @@ function tuneQuality(dt) {
   if (quality.n < 120) return;
   const avg = quality.acc / quality.n;
   quality.acc = 0; quality.n = 0;
-  if (avg > 1 / 42 && quality.level > 0) { // di bawah ~42 fps: turunkan satu tingkat
+  // di bawah ~42 fps turunkan satu tingkat; ke tingkat terendah (resolusi buram) hanya kalau di bawah 30 fps
+  if (quality.level > 0 && avg > (quality.level === 1 ? 1 / 30 : 1 / 42)) {
     applyQuality(quality.level - 1);
     report('quality -> ' + quality.level + ' (avg ms ' + (avg * 1000).toFixed(1) + ')');
   }
@@ -274,6 +275,18 @@ function tickRings(dt) {
     if (r.life <= 0) r.m.visible = false;
   }
 }
+// kilatan petir (tiang cahaya singkat)
+const boltPool = [], boltGeo = new THREE.CylinderGeometry(0.1, 0.22, 9, 5);
+function bolts(pos, r, n, color) {
+  for (let i = 0; i < n; i++) {
+    let b = boltPool.find(q => q.life <= 0);
+    if (!b) { if (boltPool.length > 24) return; b = { m: new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })), life: 0 }; scene.add(b.m); boltPool.push(b); }
+    const a = Math.random() * 6.28, d = Math.random() * r;
+    b.m.material.color.set(color); b.m.position.set(pos.x + Math.cos(a) * d, pos.y + 4.5, pos.z + Math.sin(a) * d);
+    b.m.rotation.z = (Math.random() - 0.5) * 0.3; b.life = 0.12 + Math.random() * 0.22; b.m.visible = true;
+  }
+}
+function tickBolts(dt) { for (const b of boltPool) { if (b.life <= 0) continue; b.life -= dt; b.m.material.opacity = Math.min(1, b.life * 7); b.m.scale.x = b.m.scale.z = 0.6 + Math.random() * 0.9; if (b.life <= 0) b.m.visible = false; } }
 const auraGeo = new THREE.SphereGeometry(1.15, 16, 12);
 const CONFETTI = [0xff4d4d, 0xffe14d, 0x5fe07a, 0x4dc3ff, 0xc05cff, 0xffffff];
 
@@ -336,6 +349,14 @@ function buildPreview() {
   for (const [x, z, sc] of [[-1.6, -1.5, 0.55], [1.7, -1.3, 0.7]]) { const t = prop('tree'); if (t) { t.position.set(x, 0, z); t.scale.setScalar(sc); preview.add(t); } }
   for (const [x, y, z, sc] of [[-7, 1, -9, 2.2], [8, 3, -12, 3], [-3, -3, -16, 3.5], [5, -2.5, -7, 1.6]]) { const c = prop('cloud'); if (c) { c.position.set(x, y, z); c.scale.setScalar(sc); preview.add(c); } }
   previewGod = makeGod(GODS.find(g => g.id === G.god) || GODS[0], save.skin);
+  if (!QS.has('lineup')) {
+    const others = GODS.filter(g => g.id !== G.god).sort(() => Math.random() - 0.5).slice(0, 4);
+    [[-4.2, -3.6, 0.3], [4.1, -4.2, 0.1], [-6.4, -8, 1.3], [6.6, -8.5, 1.0]].forEach(([x, z, y], i) => {
+      const isl = prop('island'); if (isl) { isl.scale.set(2.4, 1.8, 2.4); isl.position.set(x, y - 0.02, z); preview.add(isl); }
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.3, 14), m(0x74d463)); top.position.set(x, y - 0.15, z); preview.add(top);
+      const c = makeGod(others[i]); c.position.set(x, y, z); c.rotation.y = -x * 0.12; c.scale.setScalar(0.9); c.userData.crowd = i + 1; preview.add(c);
+    });
+  }
   if (QS.has('lineup')) GODS.forEach((g, i) => { const m = makeGod(g); m.position.set((i - 4.5) * 1.25, 0.02, 2.2 + Math.abs(i - 4.5) * 0.12); m.scale.setScalar(0.9); m.userData.lineup = true; preview.add(m); });
   ped.receiveShadow = true;
   preview.add(ped, ring, rock, previewGod);
@@ -517,6 +538,14 @@ const ON = {
     const a = ABILITIES[c.god] || ABILITIES.zeus;
     ring(c.pos, a.color, a.r || 2.5);
     burst(c.pos, [a.color, 0xffffff], 14, 7);
+    // efek khas
+    const fx = { zeus: [10, 0], poseidon: [0, 2], athena: [0, 1], hades: [0, 0], apollo: [0, 1], ares: [0, 1], hermes: [0, 0], thor: [4, 1], loki: [0, 2], odin: [0, 1] }[c.god] || [0, 0];
+    bolts(c.pos, a.r || 3, fx[0], a.color);
+    for (let i = 1; i <= fx[1]; i++) setTimeout(() => ring(c.pos, i % 2 ? 0xffffff : a.color, (a.r || 2.5) * (1 + i * 0.35)), i * 110);
+    if (c.god === 'hades' || c.god === 'loki') burst(c.pos, [0x2a1040, a.color, 0x120a24], 26, 4);
+    if (c.god === 'apollo' || c.god === 'odin') burst(c.pos, [0xfff2b0, 0xffffff, a.color], 22, 10);
+    if (c.god === 'poseidon') burst(c.pos, [0x4dc3ff, 0xffffff, 0x9ff0ff], 30, 11);
+    if (m.id === G.me || c.pos.distanceTo(camera.position) < 14) cam.shake = Math.max(cam.shake, a.area ? 0.35 : 0.15);
     if (a.dur) { c.auraT = a.dur; c.auraColor = a.color; }
     if (m.id === G.me) beep(700, 0.25, 'triangle', 0.09, 500);
     if (a.area) for (const e of G.ents.values()) {
@@ -578,7 +607,7 @@ function clearRound() {
   for (const e of G.ents.values()) { scene.remove(e.model, e.shadow); disposeTree(e.model); }
   G.ents.clear();
   if (G.L) { scene.remove(G.L.group); disposeTree(G.L.group); G.L = null; }
-  G.round = null; G.roundOver = false; G.outcome = null; G.celebrate = null; cam.dist = 9.5; guide.visible = false;
+  G.round = null; G.roundOver = false; G.outcome = null; G.celebrate = null; G.cine = false; document.body.classList.remove('cine'); cam.dist = 9.5; guide.visible = false;
   $('end').classList.add('hidden'); $('card').classList.add('hidden'); $('big').textContent = '';
 }
 
@@ -870,8 +899,7 @@ function tickGame(dt, now) {
     if (L.crown) { L.crownTaken = true; L.crown.position.set(champ.pos.x, champ.pos.y + 2.5, champ.pos.z); L.crown.scale.setScalar(0.62); } // mahkota di kepala juara
   }
   if (target) {
-    // intro: kamera menyapu dari samping lalu masuk ke belakang pemain
-    const intro = t < -3 ? Math.min(3, -3 - t) : 0;
+    const intro = 0;
     const yaw = cam.yaw + intro * 0.55, dist = cam.dist + intro * 3.5;
     const f = Math.cos(cam.pitch) * dist, s = Math.sin(yaw), c = Math.cos(yaw);
     const k = cam.init ? 1 - Math.exp(-10 * dt) : 1;
@@ -906,6 +934,21 @@ function tickGame(dt, now) {
     }
   }
   // target bayangan dibulatkan supaya tepi bayangan tidak bergetar
+  // intro sinematik: kamera terbang dari garis finis menyusuri lintasan ke arah pemain
+  const cine = !R.lobby && t < -3 && t > -6.2 && target;
+  if (cine !== G.cine) { G.cine = cine; document.body.classList.toggle('cine', !!cine); }
+  if (cine) {
+    const u = Math.min(1, Math.max(0, (t + 6) / 3)), e2 = u * u * (3 - 2 * u), blend = Math.max(0, (u - 0.85) / 0.15);
+    let px, py, pz, lx, ly, lz;
+    if (L.wps.length > 1) {
+      const z1 = L.wps[L.wps.length - 1].z, z = z1 + (target.pos.z - z1) * e2;
+      let y = 0; for (const cp of L.cps) if (cp.z <= z + 4) y = cp.y;
+      px = Math.sin(u * 2.6) * 7; py = y + 8.5; pz = z + 13; lx = 0; ly = y + 1; lz = z - 6;
+    } else { const a = u * 2.2 + 0.6; px = Math.sin(a) * 24; py = 13; pz = Math.cos(a) * 24; lx = 0; ly = 1; lz = 0; }
+    tmpV.set(px, py, pz).lerp(camera.position, blend);
+    camera.position.copy(tmpV);
+    camera.lookAt(lx + (cam.look.x - lx) * blend, ly + (cam.look.y + 1.3 - ly) * blend, lz + (cam.look.z - lz) * blend);
+  }
   sun.target.position.set(Math.round(cam.look.x), Math.round(cam.look.y), Math.round(cam.look.z));
   sun.position.copy(sun.target.position).add(SUN_OFF);
   if (t > 1) tuneQuality(dt);
@@ -933,6 +976,13 @@ function tickGame(dt, now) {
     lead.classList.toggle('hidden', !showLead || G.roundOver);
     if (showLead) lead.innerHTML = actives.slice().sort((a, b) => b.pos.z - a.pos.z).slice(0, 3)
       .map((e, i) => `<div class="${e === me ? 'me' : ''}">${G.fin + i + 1}. ${esc(e.name)}</div>`).join('');
+    const prog = $('prog'), showProg = showLead && L.wps.length > 1 && !G.roundOver;
+    prog.classList.toggle('hidden', !showProg);
+    if (showProg) {
+      const z0 = L.spawn.z, z1 = L.wps[L.wps.length - 1].z, pct = z => Math.max(0, Math.min(100, (z - z0) / (z1 - z0) * 100)).toFixed(1);
+      prog.innerHTML = L.cps.slice(1).map(cp => `<b style="left:${pct(cp.z)}%"></b>`).join('')
+        + actives.map(e => `<i class="${e === me ? 'me' : ''}" style="left:${pct(e.pos.z)}%;background:${godColor(e.god)}"></i>`).join('');
+    }
     const ap = $('abPill'), ab = me && ABILITIES[me.god];
     ap.classList.toggle('hidden', !(me && me.active && ab));
     if (me && ab) {
@@ -940,6 +990,8 @@ function tickGame(dt, now) {
       ap.textContent = `⚡ ${ab.name}` + (ready ? (IS_TOUCH ? '' : ' [Q]') : ` ${Math.ceil(me.abCd)}s`);
       ap.classList.toggle('ready', ready); $('btnAb').classList.toggle('cd', !ready);
       $('btnAb').textContent = ready ? ab.name.split(' ')[0].toUpperCase() : Math.ceil(me.abCd) + 's';
+      const pc = Math.round((1 - Math.max(0, me.abCd) / AB_CD) * 100);
+      $('btnAb').style.background = ready ? '' : `conic-gradient(rgba(155,92,255,.9) ${pc}%, rgba(40,30,70,.75) 0)`;
     }
   }
 }
@@ -952,6 +1004,7 @@ function tickMenu(dt, now) {
     camera.position.set(0, 1.6, 9.5); camera.lookAt(0, 0.9, 2.2);
     return;
   }
+  for (const c of preview.children) if (c.userData.crowd) animateGod(c, Math.floor(now / 2600 + c.userData.crowd * 1.7) % 4 === 0 ? 5 : 0, now / 1000);
   if (previewGod) { previewGod.rotation.y = Math.sin(now * 0.0008) * 0.7 + 0.2; animateGod(previewGod, 0, now / 1000); }
   camera.position.set(wide ? 2.2 : 0, 2.0, portrait ? 6.5 : 5.2);
   camera.lookAt(wide ? 2.2 : 0, wide ? 0.9 : portrait ? -0.9 : -0.4, 0);
@@ -966,8 +1019,8 @@ function frame(now) {
   perf.acc += now - last; perf.n++;
   const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
   last = now;
-  if ((G.phase === 'play' || G.phase === 'lobby') && G.L && G.round) tickGame(dt, now); else tickMenu(dt, now);
-  tickParts(dt); tickRings(dt); tickAmbient(dt, now / 1000);
+  if ((G.phase === 'play' || G.phase === 'lobby') && G.L && G.round) tickGame(dt, now); else { tickMenu(dt, now); if (now > 4000) tuneQuality(dt); }
+  tickParts(dt); tickRings(dt); tickBolts(dt); tickAmbient(dt, now / 1000);
   dome.position.copy(camera.position);
   sunSprite.position.copy(camera.position).addScaledVector(SUN_DIR, 440);
   renderer.render(scene, camera);

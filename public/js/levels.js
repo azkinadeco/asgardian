@@ -52,7 +52,9 @@ function glow(parent, x, y, z, color, size) {
   glowTex = glowTex || canvasTex(64, 64, c => { const g = c.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.35, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64); });
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
   s.position.set(x, y, z); s.scale.set(size, size, 1);
+  s.userData.size = size;
   parent.add(s);
+  if (CUR) CUR.glows.push(s);
   return s;
 }
 // sisi platform: bibir warna permukaan + lapisan tanah / susunan batu
@@ -87,19 +89,44 @@ function tileTex(key, base, alt, line, dots) {
     c.fillStyle = base; c.fillRect(0, 0, 128, 128);
     c.fillStyle = alt; c.fillRect(0, 0, 64, 64); c.fillRect(64, 64, 64, 64);
     if (dots) { const r = rng(7); c.fillStyle = dots; for (let i = 0; i < 46; i++) { c.beginPath(); c.arc(r() * 128, r() * 128, 1.2 + r() * 2.6, 0, 7); c.fill(); } }
+    // detail khas bahan: urat marmer, serat kayu, retak es
+    const r2 = rng(key.length * 53 + 11);
+    const wig = (n, col, lw, amp) => { c.strokeStyle = col; c.lineWidth = lw; for (let i = 0; i < n; i++) { let x = r2() * 128, y = r2() * 128; c.beginPath(); c.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (r2() - 0.5) * amp; y += (r2() - 0.3) * amp; c.lineTo(x, y); } c.stroke(); } };
+    if (key === 'marble') wig(7, 'rgba(150,135,110,0.28)', 1.2, 34);
+    if (key === 'ice') wig(8, 'rgba(255,255,255,0.75)', 1.1, 30);
+    if (key === 'coral') wig(6, 'rgba(255,255,255,0.3)', 1.5, 22);
+    if (key === 'wood') { c.strokeStyle = 'rgba(90,55,20,0.3)'; c.lineWidth = 1.5; for (let y = 5; y < 128; y += 9) { c.beginPath(); c.moveTo(0, y); for (let x = 0; x <= 128; x += 16) c.lineTo(x, y + Math.sin(x * 0.09 + y) * 2.5); c.stroke(); } }
+    // sudut ubin sedikit lebih gelap (kesan kedalaman)
+    for (const [x, y] of [[0, 0], [64, 0], [0, 64], [64, 64]]) { const g = c.createRadialGradient(x + 32, y + 32, 18, x + 32, y + 32, 48); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.10)'); c.fillStyle = g; c.fillRect(x, y, 64, 64); }
     if (line) { c.strokeStyle = line; c.lineWidth = 3; for (const [x, y] of [[0, 0], [64, 0], [0, 64], [64, 64]]) c.strokeRect(x, y, 64, 64); }
   });
   return texCache[key];
+}
+// retakan menyala (lava / rune) untuk permukaan basalt & styx
+function crackTex(key, color) {
+  if (!HAS_DOM) return null;
+  const k = 'crack_' + key;
+  if (!texCache[k]) texCache[k] = canvasTex(256, 256, c => {
+    c.fillStyle = '#000'; c.fillRect(0, 0, 256, 256);
+    const r = rng(key.length * 31 + 2);
+    c.strokeStyle = color; c.lineCap = 'round'; c.shadowColor = color; c.shadowBlur = 8;
+    for (let i = 0; i < 9; i++) {
+      let x = r() * 256, y = r() * 256, a = r() * 6.28; c.lineWidth = 1.5 + r() * 2.5; c.beginPath(); c.moveTo(x, y);
+      for (let n = 0; n < 7; n++) { a += (r() - 0.5) * 1.1; x += Math.cos(a) * 26; y += Math.sin(a) * 26; c.lineTo(x, y); }
+      c.stroke();
+    }
+  });
+  return texCache[k];
 }
 const THEMES = {
   grass: { tex: ['grass', '#6ccb5c', '#7ddc6b', null, '#58b54b'], top: 0x74d463, side: 0xa77b52 },
   marble: { tex: ['marble', '#efe6d4', '#f8f2e6', '#d8c9a8', null], top: 0xf1eadb, side: 0xdccfb6, brick: true },
   sand: { tex: ['sand', '#f0d590', '#f6e0a6', null, '#dcbb6c'], top: 0xf0d590, side: 0xc9a25c },
   coral: { tex: ['coral', '#ff9f8a', '#ffb3a0', '#f07f6c', null], top: 0xffa692, side: 0xd96f6f },
-  basalt: { tex: ['basalt', '#4a3f46', '#584b52', '#2c2429', '#6d3a2c'], top: 0x514449, side: 0x2e262b, brick: true },
+  basalt: { tex: ['basalt', '#4a3f46', '#584b52', '#2c2429', '#6d3a2c'], top: 0x514449, side: 0x2e262b, brick: true, crack: '#ff7a1a' },
   wood: { tex: ['wood', '#a8743f', '#b98248', '#8a5a2b', '#96652f'], top: 0xb07a44, side: 0x7a4e26 },
   ice: { tex: ['ice', '#cfeeff', '#e6f7ff', '#a9dcf5', '#ffffff'], top: 0xd8f1ff, side: 0x8ec9ea, brick: true },
-  styx: { tex: ['styx', '#4b3a78', '#5a4690', '#2d2250', '#7de3b0'], top: 0x52408a, side: 0x2d2250, brick: true },
+  styx: { tex: ['styx', '#4b3a78', '#5a4690', '#2d2250', '#7de3b0'], top: 0x52408a, side: 0x2d2250, brick: true, crack: '#5dffb4' },
 };
 function themeMats(theme, w, d) {
   const th = THEMES[theme], base = tileTex(...th.tex);
@@ -107,7 +134,10 @@ function themeMats(theme, w, d) {
   if (base) {
     const t = base.clone();
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(w / 8, d / 8); t.anisotropy = 4; t.needsUpdate = true;
-    top = lam(0xffffff, { map: t });
+    const o = { map: t };
+    const ck = th.crack && crackTex(theme, th.crack);
+    if (ck) { const e = ck.clone(); e.wrapS = e.wrapT = THREE.RepeatWrapping; e.repeat.set(w / 10, d / 10); e.needsUpdate = true; o.emissiveMap = e; o.emissive = 0xffffff; o.emissiveIntensity = 0.85; }
+    top = lam(0xffffff, o);
   } else top = lam(th.top);
   const sb = sideTex(theme, th);
   const sideMat = len => {
@@ -120,6 +150,8 @@ function themeMats(theme, w, d) {
   return [sx, sx, top, lam(th.side), sz, sz];
 }
 
+let CUR = null; // level yang sedang dibangun (untuk mendaftarkan benda bergerak)
+const floaty = (o, amp, drift = 0) => { if (CUR && o) CUR.floaters.push({ o, y: o.position.y, x: o.position.x, amp, drift, ph: o.position.x * 0.37 + o.position.z * 0.21 }); return o; };
 function put(parent, name, x, y, z, sx = 1, sy = sx, sz = sx, color, rotY = 0) {
   const o = prop(name, color);
   if (!o) return null;
@@ -135,6 +167,7 @@ class Level {
     this.gravity = 28; this.killY = -14; this.survival = false;
     this.spawn = { y: 0, z: 0 };
     this.sky = ['#3a7bd5', '#9fd3ff', '#ffe9c9'];
+    this.floaters = []; this.glows = [];
   }
   // y = tinggi permukaan atas (sisi rendah kalau ramp); rise = kenaikan sepanjang +z
   addPlat(x, y, z, w, d, opt = {}) {
@@ -313,7 +346,7 @@ function lightning(L, x, y, z, rad, period, ph, color = 0xffe04a, boltColor = 0x
 // ------------------------------------------------------------ dekorasi
 function cloud(g, x, y, z, s, color = 0xffffff) {
   const pc = put(g, 'cloud', x, y, z, s * 1.35, s * 1.2, s * 1.35, color, x * 1.7);
-  if (pc) return pc;
+  if (pc) return floaty(pc, 0.5, 2.5);
   const m = lam(color), c = new THREE.Group();
   c.position.set(x, y, z);
   for (const [dx, dy, dz, r] of [[0, 0, 0, 1], [1.1, 0.1, 0.2, 0.75], [-1.1, 0, -0.1, 0.8], [0.4, 0.5, -0.3, 0.7], [-0.5, 0.35, 0.3, 0.6]])
@@ -349,7 +382,7 @@ function decoIsland(g, x, y, z, r, rnd, opt = {}) {
     put(isl, opt.item || 'tree', Math.cos(a) * d, 0, Math.sin(a) * d, sc, sc, sc, opt.itemColor, rnd() * 6);
   }
   g.add(isl);
-  return isl;
+  return floaty(isl, 0.45);
 }
 
 function rainbowMat() {
@@ -361,6 +394,7 @@ function rainbowMat() {
 // ============================================================ MAP 1: ASGARD
 function asgard(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   const GRASS = 0x7ed36b;
   L.spawn = { y: 0, z: 2 };
 
@@ -394,7 +428,7 @@ function asgard(seed) {
     const side = i % 2 ? 1 : -1;
     tower(g, side * (55 + rnd() * 70), -30 + rnd() * 30, -10 + rnd() * 170, 1 + rnd() * 1.6);
   }
-  tower(g, 0, -6, 150, 4);
+  if (!put(g, 'palace', 0, -2, 165, 2.6, 2.6, 2.6)) tower(g, 0, -6, 150, 4);
   for (let i = 0; i < 10; i++) decoIsland(g, (i % 2 ? 1 : -1) * (16 + rnd() * 26), -6 + rnd() * 9, -5 + i * 12 + rnd() * 8, 3 + rnd() * 3, rnd);
   for (let i = 0; i < 26; i++) cloud(g, (rnd() - 0.5) * 160, -22 + rnd() * 14, -20 + rnd() * 170, 3 + rnd() * 4);
   return L;
@@ -403,6 +437,7 @@ function asgard(seed) {
 // ============================================================ MAP 2: GALAKSI
 function galaxy(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.survival = true; L.gravity = 20; L.killY = -12;
   L.sky = ['#03010c', '#180a36', '#3a1466'];
   L.fog = [120, 500];
@@ -491,6 +526,7 @@ function galaxy(seed) {
 // ============================================================ MAP 3: OLYMPUS
 function olympus(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.sky = ['#ff8a4a', '#ffd29a', '#fff1d2'];
   L.spawn = { y: 0, z: 1 };
   const W = 18;
@@ -533,6 +569,7 @@ function olympus(seed) {
   for (const z of [48, 56, 64]) for (const s of [-1, 1]) column(g, s * 8.2, 14, z, 7);
   for (let i = 0; i < 30; i++) cloud(g, (rnd() - 0.5) * 170, -18 + rnd() * 30, -30 + rnd() * 160, 3 + rnd() * 5, 0xfff3e0);
   put(g, 'temple', 0, 6, 128, 3.2, 3.2, 3.2);
+  put(g, 'statue', -13.5, 14, 56, 1.5, 1.5, 1.5, undefined, 0.5); put(g, 'statue', 13.5, 14, 56, 1.5, 1.5, 1.5, undefined, -0.5);
   put(g, 'temple', -46, 2, 70, 1.6, 1.6, 1.6, undefined, 0.6); put(g, 'temple', 48, -4, 30, 1.6, 1.6, 1.6, undefined, -0.5);
   for (let i = 0; i < 10; i++) decoIsland(g, (i % 2 ? 1 : -1) * (15 + rnd() * 20), -4 + i * 2 + rnd() * 6, -6 + i * 10 + rnd() * 6, 3 + rnd() * 2.5, rnd);
   // puncak gunung di kejauhan
@@ -637,6 +674,7 @@ function arch(g, z, y, half, color, rainbow) {
 // ============================================================ MAP 4: SAMUDRA POSEIDON
 function tidal(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.sky = ['#1f8fd6', '#7fe0e8', '#d9fff5'];
   L.killY = -5; L.spawn = { y: 0, z: 2 };
   sea(L, -4.2, 0x1fa3c9, 0x0a4a66);
@@ -665,6 +703,7 @@ function tidal(seed) {
     const col = [0xff8a7a, 0xffc36b, 0x9b7bff, 0x53d6b6][i % 4], sc = 1.6 + rnd() * 2.6;
     if (i % 3 === 0 || !put(g, 'coral', x, -4.6, z, sc, sc, sc, col, rnd() * 6)) mesh(new THREE.ConeGeometry(2 + rnd() * 3, hgt, 6), lam(col, { flatShading: true }), x, -4 + hgt / 2, z, g);
   }
+  put(g, 'lighthouse', -30, -4, 62, 1.5, 1.5, 1.5); put(g, 'lighthouse', 34, -4, 118, 1.2, 1.2, 1.2);
   for (let i = 0; i < 14; i++) cloud(g, (rnd() - 0.5) * 220, 28 + rnd() * 25, rnd() * 180, 4 + rnd() * 4);
   return L;
 }
@@ -672,6 +711,7 @@ function tidal(seed) {
 // ============================================================ MAP 5: MUSPELHEIM
 function muspel(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.sky = ['#1a0508', '#7a1c12', '#ff7a2e'];
   L.killY = -5; L.spawn = { y: 0, z: 2 };
   sea(L, -4.3, 0xff5a1f, 0xd63a00);
@@ -694,6 +734,7 @@ function muspel(seed) {
   L.wps = [{ x: 0, z: 6, w: 5 }, { x: 0, z: 32.5, w: 3.5 }, { x: 0, z: 36.5, w: 1 }, { x: 0, z: 43, w: 1 }, { x: 0, z: 49.5, w: 1 }, { x: 0, z: 56, w: 1 },
     { x: 0, z: 62.5, w: 2 }, { x: 0, z: 89.5, w: 5.5 }, { x: 0, z: 106, w: 4 }];
   L.finish = e => e.pos.z >= 101 && e.pos.y > 5.5;
+  for (const [x, z, sc, tilt] of [[-22, 30, 1.6, 0.25], [24, 70, 2.0, -0.2], [-28, 100, 1.4, 0.15]]) { const sw = put(g, 'sword', x, -6, z, sc, sc, sc, undefined, 0.6); if (sw) sw.rotation.z = tilt; }
   // gunung berapi & batu membara
   for (let i = 0; i < 9; i++) {
     const side = i % 2 ? 1 : -1, x = side * (45 + rnd() * 70), z = -20 + rnd() * 170, hgt = 30 + rnd() * 40;
@@ -707,6 +748,7 @@ function muspel(seed) {
 // ============================================================ MAP 6: RODA HADES
 function hades(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.survival = true; L.killY = -10;
   L.sky = ['#07030f', '#2a1048', '#1f6e5a'];
   sea(L, -9.2, 0x39d9a0, 0x0e7a55);
@@ -727,6 +769,7 @@ function hades(seed) {
     const cr = put(g, 'crystal', Math.cos(a) * r, -9, Math.sin(a) * r, sc, sc * 1.6, sc, 0x4dffb0, a);
     if (cr) cr.traverse(n => { if (n.isMesh) { n.material.emissive = new THREE.Color(0x1a8f5c); n.material.flatShading = true; } });
   }
+  for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2 + 0.6; put(g, 'ruin', Math.cos(a) * 21, -9.2, Math.sin(a) * 21, 1.5, 1.5, 1.5, 0x3a2f5c, -a + Math.PI / 2); }
   for (let i = 0; i < 30; i++) {
     const a = rnd() * Math.PI * 2, r = 30 + rnd() * 90, hgt = 10 + rnd() * 40;
     mesh(new THREE.ConeGeometry(3 + rnd() * 6, hgt, 5), lam(0x1d1433, { flatShading: true }), Math.cos(a) * r, -9 + hgt / 2, Math.sin(a) * r, g);
@@ -737,6 +780,7 @@ function hades(seed) {
 // ============================================================ MAP 7: TAMAN HESPERIDES (rebutan apel emas)
 function garden(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.sky = ['#2f7fd8', '#a6dcff', '#fff0c9'];
   L.ringSpawn = true; L.killY = -10;
   L.addPlat(0, 0, 0, 36, 36, { theme: 'grass', rock: true, h: 1.6 });
@@ -745,6 +789,7 @@ function garden(seed) {
   spinner(L, 9, 0, -9, 3.5, 2.6, rnd() * 6, 0xf2c14e);
   spinner(L, -9, 0, 9, 3.5, -2.6, rnd() * 6, 0xf2c14e);
   // pohon apel raksasa di tengah (hiasan)
+  put(g, 'statue', -15.5, 0, -15.5, 0.8, 0.8, 0.8, undefined, 0.8); put(g, 'statue', 15.5, 0, 15.5, 0.8, 0.8, 0.8, undefined, -2.3);
   if (!put(g, 'tree', 0, 0, 0, 2.6, 2.6, 2.6)) mesh(new THREE.ConeGeometry(2.5, 9, 10), lam(0x3f9b4b), 0, 5, 0, g);
   const spots = [];
   for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.3; spots.push({ x: Math.cos(a) * 6.5, y: 0, z: Math.sin(a) * 6.5 }); }
@@ -774,6 +819,7 @@ function garden(seed) {
 // ============================================================ MAP 8: YGGDRASIL (final)
 function yggdrasil(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.sky = ['#0e5a6b', '#7fd6c2', '#f3ffd9'];
   L.spawn = { y: 0, z: 1 };
   const W = { theme: 'wood', rim: 0x58b84f };
@@ -822,6 +868,7 @@ function yggdrasil(seed) {
 // ============================================================ MAP 9: JOTUNHEIM (balapan es)
 function jotunheim(seed) {
   const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
   L.sky = ['#3b6fb5', '#bfe3ff', '#f4fbff'];
   L.ice = true; L.killY = -5; L.spawn = { y: 0, z: 2 };
   sea(L, -4.2, 0x6fbde8, 0x1d4f7a);
@@ -851,6 +898,7 @@ function jotunheim(seed) {
     const cr = put(g, 'crystal', x, -4.5, z, sc, sc * 1.4, sc, [0xdff4ff, 0x9fd8ff, 0xffffff][i % 3], rnd() * 6);
     if (cr) cr.traverse(n => { if (n.isMesh) n.material.flatShading = true; }); else mesh(new THREE.ConeGeometry(2 + rnd() * 3, 8, 5), lam(0xdff4ff, { flatShading: true }), x, 0, z, g);
   }
+  put(g, 'icecastle', 0, -4, 150, 3.2, 3.2, 3.2); put(g, 'icecastle', -42, -4, 70, 1.6, 1.6, 1.6, undefined, 1); put(g, 'icecastle', 44, -4, 30, 1.4, 1.4, 1.4, undefined, 2);
   for (let i = 0; i < 7; i++) mesh(new THREE.ConeGeometry(26 + rnd() * 18, 60 + rnd() * 40, 6), lam(0xeaf6ff, { flatShading: true }), (i % 2 ? 1 : -1) * (80 + rnd() * 50), 20, rnd() * 170, g);
   for (let i = 0; i < 12; i++) cloud(g, (rnd() - 0.5) * 220, 30 + rnd() * 25, rnd() * 180, 4 + rnd() * 4);
   return L;
@@ -859,8 +907,10 @@ function jotunheim(seed) {
 // pulau lobby: tempat pemain bermain-main sambil menunggu game dimulai
 export function buildPlaza() {
   const L = new Level(), g = L.group, rnd = rng(42);
+  CUR = L;
   L.sky = ['#3a7bd5', '#9fd3ff', '#ffe9c9'];
   L.ringSpawn = true; L.killY = -10;
+  CUR = L;
   L.addPlat(0, 0, 0, 30, 30, { theme: 'grass', rock: true, h: 1.6 });
   L.addPlat(0, 0.9, -9, 8, 6, { theme: 'marble', h: 0.9 });
   pad(L, 9, 0, 0, 1.6, 15);
@@ -874,13 +924,24 @@ export function buildPlaza() {
   for (let i = 0; i < 18; i++) cloud(g, (rnd() - 0.5) * 170, -22 + rnd() * 12, (rnd() - 0.5) * 170, 3 + rnd() * 4);
   L.cps = [{ x: 0, y: 0, z: 3 }];
   L.info = { name: 'Lobby', sub: '', type: 'lobby', goal: '' };
+  animateEnv(L);
   L.update(0);
   return L;
+}
+
+// awan & pulau hias melayang pelan, pendar berdenyut
+function animateEnv(L) {
+  if (!L.floaters.length && !L.glows.length) return;
+  L.updaters.push(t => {
+    for (const f of L.floaters) { f.o.position.y = f.y + Math.sin(t * 0.55 + f.ph) * f.amp; if (f.drift) f.o.position.x = f.x + Math.sin(t * 0.07 + f.ph) * f.drift; }
+    for (let i = 0; i < L.glows.length; i++) { const s = L.glows[i], k = s.userData.size * (1 + Math.sin(t * 2.4 + i * 1.7) * 0.12); s.scale.set(k, k, 1); }
+  });
 }
 
 const BUILDERS = [asgard, galaxy, olympus, tidal, muspel, hades, garden, yggdrasil, jotunheim];
 export function buildLevel(idx, seed) {
   const L = BUILDERS[idx % BUILDERS.length](seed || 1);
+  animateEnv(L);
   L.info = LEVELS[idx % LEVELS.length];
   // bendera di tiap checkpoint
   if (!L.survival && !L.collect) L.cps.slice(1).forEach(cp => {
@@ -888,7 +949,8 @@ export function buildLevel(idx, seed) {
     if (!P) return;
     for (const s of [-1, 1]) {
       const x = P.x0 + s * (P.w / 2 - 0.35);
-      if (put(L.group, 'flag', x, cp.y, cp.z, 1, 1, 1, undefined, s > 0 ? Math.PI : 0)) continue;
+      const fl = put(L.group, 'flag', x, cp.y, cp.z, 1, 1, 1, undefined, s > 0 ? Math.PI : 0);
+      if (fl) { L.updaters.push(t => { fl.rotation.y = (s > 0 ? Math.PI : 0) + Math.sin(t * 2.2 + x) * 0.22; }); continue; }
       mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.2, 8), lam(GOLD), x, cp.y + 1.6, cp.z, L.group);
       const f = mesh(new THREE.ConeGeometry(0.5, 1.1, 3), lam(0xff4d6d, { emissive: 0x7a1030 }), x - s * 0.55, cp.y + 2.75, cp.z, L.group);
       f.rotation.z = s * Math.PI / 2; f.scale.z = 0.15;

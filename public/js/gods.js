@@ -8,13 +8,13 @@ export const GODS = [
   { id: 'zeus', name: 'Zeus', robe: 0xffffff, trim: 0xf2c14e, skin: 0xffd2a8, hair: 0xf2f2f2, beard: true, head: 'laurel', item: 'bolt' },
   { id: 'poseidon', name: 'Poseidon', robe: 0x2aa7d8, trim: 0x9ff0ff, skin: 0xf2c9a0, hair: 0x1c6fa8, beard: true, head: 'crown', item: 'trident' },
   { id: 'athena', name: 'Athena', robe: 0xe8e2ff, trim: 0x8a6fe8, skin: 0xffd9b8, hair: 0x6b4a2b, head: 'helmet', metal: 0xd9a441, crest: 0x3b6fe0, item: 'spear' },
-  { id: 'hades', name: 'Hades', robe: 0x3a2a55, trim: 0x9b5cff, skin: 0xcfd6e6, hair: 0x1b1b2a, beard: true, head: 'helmet', metal: 0x2a2a3a, crest: 0x9b5cff },
+  { id: 'hades', name: 'Hades', cape: 0x5b3a8a, robe: 0x3a2a55, trim: 0x9b5cff, skin: 0xcfd6e6, hair: 0x1b1b2a, beard: true, head: 'helmet', metal: 0x2a2a3a, crest: 0x9b5cff },
   { id: 'apollo', name: 'Apollo', robe: 0xfff1b8, trim: 0xff9d2e, skin: 0xffcf99, hair: 0xf7c531, head: 'laurel' },
-  { id: 'ares', name: 'Ares', robe: 0xc0392b, trim: 0x2b2b2b, skin: 0xe8b48a, hair: 0x2b1a12, head: 'helmet', metal: 0xb0b6bf, crest: 0xff3b30, item: 'spear' },
+  { id: 'ares', name: 'Ares', cape: 0x5a1010, robe: 0xc0392b, trim: 0x2b2b2b, skin: 0xe8b48a, hair: 0x2b1a12, head: 'helmet', metal: 0xb0b6bf, crest: 0xff3b30, item: 'spear' },
   { id: 'hermes', name: 'Hermes', robe: 0x8fe3c0, trim: 0xffffff, skin: 0xffd9b8, hair: 0xb5651d, head: 'wings' },
-  { id: 'thor', name: 'Thor', robe: 0x4a5a78, trim: 0xd9d9d9, skin: 0xffd2a8, hair: 0xd9562b, beard: true, head: 'wings', item: 'hammer' },
+  { id: 'thor', name: 'Thor', cape: 0xd0312d, robe: 0x4a5a78, trim: 0xd9d9d9, skin: 0xffd2a8, hair: 0xd9562b, beard: true, head: 'wings', item: 'hammer' },
   { id: 'loki', name: 'Loki', robe: 0x7b3fa0, trim: 0xff9d2e, skin: 0xf1dcc9, hair: 0xff6a2b, head: 'flame' },
-  { id: 'odin', name: 'Odin', robe: 0x5a6f8f, trim: 0xc9d2e0, skin: 0xf0c8a0, hair: 0xbfc5cc, beard: true, head: 'crown', patch: true, item: 'spear' },
+  { id: 'odin', name: 'Odin', cape: 0x27364f, robe: 0x5a6f8f, trim: 0xc9d2e0, skin: 0xf0c8a0, hair: 0xbfc5cc, beard: true, head: 'crown', patch: true, item: 'spear' },
 ];
 
 // kostum: warna jubah alternatif yang dibuka dengan koin
@@ -323,7 +323,16 @@ function makeRigged(def) {
       }
     }
   }
-  g.userData = { rig, bones, eyes, shines, smile, outline: outlineRef, seed: Math.random() * 10, phase: 0, lastT: 0,
+  // jubah berkibar (kain sederhana: baris atas menempel di bahu, sisanya melambai)
+  let cape = null;
+  if (def.cape !== undefined) {
+    const geo = new THREE.PlaneGeometry(0.82, 0.95, 4, 6);
+    const m = new THREE.Mesh(geo, M(def.cape, { side: THREE.DoubleSide }));
+    m.position.set(0, 0.62, -0.3); m.castShadow = true; m.frustumCulled = false;
+    anchor('body').add(m);
+    cape = { geo, base: geo.attributes.position.array.slice(), t: 0 };
+  }
+  g.userData = { rig, bones, eyes, shines, smile, outline: outlineRef, cape, seed: Math.random() * 10, phase: 0, lastT: 0,
     st: { ll: 0, lr: 0, al: 0, ar: 0, azl: 0, azr: 0, hx: 0, hy: 0, bx: 0, by: 0, eye: 1.5, spin: 0 } };
   return g;
 }
@@ -403,6 +412,16 @@ function animateRig(g, anim, t, extra) {
   pose(u, 'legR', st.lr, 0, 0);
   pose(u, 'armL', st.al, 0, st.azl);
   pose(u, 'armR', st.ar, 0, -st.azr);
+  if (u.cape) {
+    const p = u.cape.geo.attributes.position, b = u.cape.base, lift = Math.min(1, speed / 9) * (anim === 1 || anim === 3 ? 1 : 0.25) + (anim === 2 ? 0.5 : 0);
+    for (let i = 0; i < p.count; i++) {
+      const by = b[i * 3 + 1], bx2 = b[i * 3], k = (0.475 - by) / 0.95, w = k * k;
+      p.setZ(i, -w * (0.1 + lift * 0.55) - Math.sin(t * (5 + lift * 6) + k * 3.2 + bx2 * 3) * 0.06 * k * (1 + lift));
+      p.setY(i, by + w * lift * 0.22);
+      p.setX(i, bx2 * (1 + k * 0.25));
+    }
+    p.needsUpdate = true; u.cape.geo.computeVertexNormals();
+  }
   for (const e of u.eyes) e.scale.y = st.eye;
   const sh = st.eye > 0.6;
   for (const h of u.shines) h.visible = sh;

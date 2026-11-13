@@ -85,7 +85,7 @@
   #top { padding-right:104px !important; }
   #rotate { display:none; position:fixed; z-index:4; left:0; right:0; bottom:38%; text-align:center; pointer-events:none; color:#fff; font-size:14px; text-shadow:0 2px 0 #2a1e4a; }
   @media (orientation:portrait) and (pointer:coarse) { body.playing #rotate { display:block; } }
-  body.inlobby #top, body.inlobby #lead, body.inlobby #help, body.inlobby #spec, body.inlobby #card, body.inlobby #end, body.inlobby #btnAb { display:none !important; }
+  body.inlobby #top, body.inlobby #prog, body.inlobby #lead, body.inlobby #help, body.inlobby #spec, body.inlobby #card, body.inlobby #end, body.inlobby #btnAb { display:none !important; }
   @media (max-width:899px) { #lobby { align-items:flex-start; padding-top:58px; } #lobby .panel { max-height:46vh; } }
   #btnAb { right:calc(max(20px,env(safe-area-inset-right)) + 22px); bottom:calc(max(26px,env(safe-area-inset-bottom)) + 104px); width:74px; height:74px; background:rgba(155,92,255,.8); font-size:11px; line-height:1.1; }
   #btnEmote { right:calc(max(20px,env(safe-area-inset-right)) + 104px); bottom:calc(max(22px,env(safe-area-inset-bottom)) + 84px); width:52px; height:52px; background:rgba(255,255,255,.3); font-size:22px; }
@@ -107,6 +107,18 @@
   @keyframes panelIn { from { transform:translateY(18px); opacity:0; } to { transform:none; opacity:1; } }
   .screen:not(.hidden) .panel { animation:panelIn .3s ease-out; }
   .pill { box-shadow:0 2px 0 rgba(0,0,0,.25); }
+  #vig { position:fixed; inset:0; pointer-events:none; z-index:1; background:radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(30,16,60,.38) 100%); }
+  .bar { position:fixed; left:0; right:0; height:0; background:#120a24; z-index:2; pointer-events:none; transition:height .45s ease; }
+  #barT { top:0; } #barB { bottom:0; }
+  body.cine .bar { height:9vh; }
+  body.cine #top, body.cine #lead, body.cine #prog, body.cine #touch, body.cine #help { opacity:0; }
+  #top, #lead, #prog, #touch, #help { transition:opacity .3s; }
+  .screen, #hud, #muteBtn, #setBtn, #settings { z-index:3; } #hud { position:fixed; }
+  #prog { position:absolute; left:50%; transform:translateX(-50%); top:58px; width:min(62vw,520px); height:10px; border-radius:6px; background:rgba(42,30,74,.6); box-shadow:0 0 0 2px rgba(255,255,255,.25); }
+  #prog i { position:absolute; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; border:2px solid #fff; transition:left .2s linear; }
+  #prog i.me { width:18px; height:18px; margin:-9px 0 0 -9px; border-color:var(--gold); z-index:2; box-shadow:0 0 8px var(--gold); }
+  #prog b { position:absolute; top:-5px; width:3px; height:20px; margin-left:-1px; background:rgba(255,255,255,.55); border-radius:2px; }
+  #prog:after { content:'🏁'; position:absolute; right:-22px; top:-9px; font-size:16px; }
   #btnAb.cd { filter:grayscale(1); opacity:.6; }
   #power { margin:-6px 0 12px; background:#2a1e4a; color:#fff; border-radius:12px; padding:8px 12px; font-size:13px; }
   #power b { color:var(--gold); }
@@ -127,6 +139,7 @@
   <div class="row"><span>Kamera otomatis mengikuti</span><input id="optA" type="checkbox"></div>
   <button id="fsBtn" class="btn" style="font-size:15px;padding:8px">LAYAR PENUH</button>
 </div>
+<div id="vig"></div><div class="bar" id="barT"></div><div class="bar" id="barB"></div>
 <div id="rotate">📱 Putar HP ke posisi mendatar supaya lebih enak dimainkan</div>
 
 <div id="menu" class="screen">
@@ -167,6 +180,7 @@
 <div id="hud" class="hidden">
   <div id="top"><span class="pill" id="rname"></span><span class="pill" id="goal"></span><span class="pill" id="timer"></span><span class="pill" id="count"></span><span class="pill" id="abPill"></span></div>
   <div id="lead" class="hidden"></div>
+  <div id="prog" class="hidden"></div>
   <div id="big"></div>
   <div id="card" class="hidden"><small id="cardSub"></small><b id="cardName"></b><span id="cardGoal"></span></div>
   <div id="end" class="hidden"><small id="endSmall"></small><h2 id="endTitle"></h2><div class="you" id="endYou"></div><div class="names" id="endNames"></div></div>

@@ -303,6 +303,53 @@ for ix in range(NX - 1):
 b._tag(0, 'crest')
 props.append(b.finish(smooth=True))
 
+# ================================================================ bangunan ikonik tiap map
+b = Build('palace')                                # istana Asgard
+b.cone('rock', 1.5, 9.5, 12, (0, 0, -12), seg=10)
+for v in b.bm.verts:
+    if v.co.z < -0.2: k = 1 + 0.2 * noise.noise(v.co * 0.4); v.co.x *= k; v.co.y *= k
+b.cone('cream', 6.5, 5.6, 7, (0, 0, 0), seg=18); b.cone('gold', 6.9, 6.9, 0.6, (0, 0, 7), seg=18)
+b.cone('cream', 3.6, 3.0, 10, (0, 0, 7.6), seg=16); b.cone('gold', 3.4, 3.4, 0.5, (0, 0, 17.6), seg=16)
+b.sphere('gold', 3.3, (0, 0, 18.0), scale=(1, 1, 1.15), seg=18); b.cone('gold', 0.5, 0.0, 5, (0, 0, 21), seg=8)
+for i in range(4):
+    a = i / 4 * math.tau + 0.78; x, y = math.cos(a) * 6.8, math.sin(a) * 6.8
+    b.cone('cream', 1.7, 1.4, 12, (x, y, 0), seg=12); b.cone('gold', 1.9, 1.9, 0.4, (x, y, 12), seg=12); b.cone('gold', 1.8, 0.0, 4.5, (x, y, 12.4), seg=12)
+for i in range(10):
+    a = i / 10 * math.tau; b.box('win', (0.8, 0.4, 2.0), (math.cos(a) * 6.05, math.sin(a) * 6.05, 4), RZ(a + math.pi / 2))
+props.append(b.finish(smooth=True))
+# patung raksasa (Olympus / taman)
+st = blob('statue_fig', 'marble', [(0, 0, 4.6, .9), (0, 0, 3.2, .85), (0, 0, 2.3, .95), (-.45, 0, 1.1, .5), (.45, 0, 1.1, .5), (-.45, -.1, .35, .5), (.45, -.1, .35, .5),
+                                   (-1.0, 0, 3.5, .42), (-1.5, 0, 3.0, .38), (1.0, 0, 3.9, .42), (1.45, 0, 4.7, .38), (1.6, 0, 5.5, .4)], res=0.16, target=700)
+pb = Build('statue_base'); pb.box('marble', (3.2, 3.2, 0.8), (0, 0, -0.4)); pb.box('gold', (3.5, 3.5, 0.25), (0, 0, -0.9)); pb.box('marble', (3.9, 3.9, 0.6), (0, 0, -1.3))
+poly_extrude(pb, 'bolt', [(1.5, 7.6), (1.95, 7.6), (1.7, 6.7), (2.0, 6.7), (1.45, 5.3), (1.6, 6.3), (1.3, 6.3)], 0.25)
+props.append(join('statue', [st, pb.finish(smooth=False)]))
+b = Build('lighthouse')                            # mercusuar (laut Poseidon)
+for i in range(5):
+    r0, r1 = 2.4 - i * 0.26, 2.4 - (i + 1) * 0.26
+    b.cone('white' if i % 2 else 'coral', r0, r1, 3.0, (0, 0, i * 3.0), seg=16)
+b.cone('gold', 1.6, 1.6, 0.35, (0, 0, 15), seg=16); b.cone('bolt', 0.9, 0.9, 1.6, (0, 0, 15.35), seg=12)
+b.cone('gold', 1.5, 0.0, 2.0, (0, 0, 16.95), seg=16); b.cone('rock', 3.6, 3.0, 1.2, (0, 0, -1.2), seg=9)
+props.append(b.finish(smooth=True))
+b = Build('sword')                                 # pedang raksasa tertancap (Muspelheim)
+poly_extrude(b, 'steel', [(-0.9, 0), (0.9, 0), (0.9, 9.5), (0.0, 11.5), (-0.9, 9.5)], 0.35)
+poly_extrude(b, 'gold', [(-2.4, 11.3), (2.4, 11.3), (2.8, 12.2), (-2.8, 12.2)], 0.7)
+b.cone('wood', 0.35, 0.3, 3.0, (0, 0, 12.2), seg=10); b.sphere('gold', 0.6, (0, 0, 15.5), seg=10); b.sphere('gem', 0.45, (0, -0.3, 11.75), seg=10)
+props.append(b.finish(smooth=False, bevel=0.06))
+b = Build('icecastle')                             # kastil es (Jotunheim)
+random.seed(9)
+for i in range(11):
+    a = i / 11 * math.tau; r = 0 if i == 0 else 3.2 + random.random() * 1.6; h = 12 if i == 0 else 4 + random.random() * 5; rad = 1.5 if i == 0 else 0.8 + random.random() * 0.5
+    x, y = math.cos(a) * r, math.sin(a) * r
+    b.cone('crystal', rad, rad * 0.85, h, (x, y, 0), seg=6); b.cone('white', rad * 0.95, 0.0, h * 0.35, (x, y, h), seg=6)
+b.cone('crystal', 5.6, 4.6, 2.2, (0, 0, -2.2), seg=8)
+props.append(b.finish(smooth=False))
+b = Build('ruin')                                  # reruntuhan gerbang (Hades)
+for sx, h in ((-1, 7.5), (1, 5.2)):
+    b.cone('stone', 0.9, 0.78, h, (sx * 3.2, 0, 0), seg=10); b.box('stone', (2.3, 2.3, 0.5), (sx * 3.2, 0, 0.25)); b.box('stone', (1.9, 1.9, 0.45), (sx * 3.2, 0, h))
+b.box('stone', (5.0, 1.5, 1.0), (-1.4, 0, 8.4), RY(0.12)); b.box('stone', (1.6, 1.4, 0.9), (2.6, 1.6, 0.45), RZ(0.5)); b.box('stone', (1.2, 1.1, 0.8), (0.6, -1.9, 0.4), RZ(-0.3))
+b.sphere('gem', 0.35, (-3.2, -0.85, 5.5), seg=8)
+props.append(b.finish(smooth=False, bevel=0.07))
+
 for o in props:
     xs = [v.co for v in o.data.vertices]
     print('PROP %-8s polys %5d  x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f' % (o.name, len(o.data.polygons), min(c.x for c in xs), max(c.x for c in xs), min(c.y for c in xs), max(c.y for c in xs), min(c.z for c in xs), max(c.z for c in xs)))
@@ -314,14 +361,16 @@ if argv:
     grid = {'cloud': (-9, 0, 2, 1.5), 'island': (-5.5, 0, 3, 3), 'boulder': (-2.5, 0, 1, 1), 'column': (0, 0, 0, 1), 'tower': (4.5, 4, 0, 0.6), 'tree': (2.2, 0, 0, 1.2),
             'hammer': (-9, -5, 1, 1), 'coral': (-5.5, -5, 0, 1), 'crystal': (-2.5, -5, 0, 1), 'temple': (10, 3, 0, 0.5), 'hair': (1, -5, 1, 2.5), 'beard': (3.5, -5, 1.5, 2.5)}
     for o in props:
-        if o.name in ('hub', 'pivot', 'gate', 'flag'):
+        if o.name in ('palace', 'statue', 'lighthouse', 'sword', 'icecastle', 'ruin'):
+            x, y, z, s = {'palace': (-12, 12, 0, 0.35), 'statue': (-5, 12, 1, 0.9), 'lighthouse': (0, 12, 0, 0.5), 'sword': (5, 12, 0, 0.55), 'icecastle': (11, 12, 0, 0.5), 'ruin': (17, 10, 0, 0.6)}[o.name]
+        elif o.name in ('hub', 'pivot', 'gate', 'flag'):
             x, y, z, s = {'hub': (-9, -17, 0, 2), 'pivot': (-5, -17, 1, 2), 'gate': (4, -17, 0, 0.5), 'flag': (11, -17, 0, 1.3)}[o.name]
         elif o.name.startswith('acc_'):
             i = [q.name for q in props if q.name.startswith('acc_')].index(o.name); x, y, z, s = -10 + i * 2.6, -11, 1, 2.2
         else: x, y, z, s = grid[o.name]
         o.location = (x, y, z); o.scale = (s, s, s)
     cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); scene.collection.objects.link(cam); scene.camera = cam
-    cam.location = (1, -34, 15); cam.data.lens = 50
+    cam.location = (2, -40, 20); cam.data.lens = 46
     cam.rotation_euler = (Vector((1, -4, 2.0)) - cam.location).to_track_quat('-Z', 'Y').to_euler()
     scene.render.engine = 'BLENDER_WORKBENCH'; scene.display.shading.light = 'STUDIO'; scene.display.shading.color_type = 'MATERIAL'
     scene.render.resolution_x = 1300; scene.render.resolution_y = 700; scene.render.filepath = argv[0]
