@@ -98,6 +98,7 @@ function send(ws, m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m))
 // tiap pemain mode main-sendiri mendapat ruang pribadi. (Mode online nanti cukup menambah ruang berkode.)
 function createRoom(roomId, opts = {}) {
   const players = new Map(); // id -> {id,name,god,bot,ws,state}
+  let score = {}; // poin per game untuk papan skor akhir
   let hostId = null, phase = 'lobby', botCount = opts.solo ? 7 : 5, round = null, timers = [], plan = [0, 1, 2], diff = 1; // diff: 0 mudah, 1 normal, 2 sulit
 
   function broadcast(m) {
@@ -124,7 +125,9 @@ function createRoom(roomId, opts = {}) {
   function startGame(forced) {
     if (phase !== 'lobby') return;
     plan = POOLS.map(pool => pool[(Math.random() * pool.length) | 0]);
-    if (DEBUG && Number.isInteger(forced) && MAPS[forced]) plan = [forced];
+    // mode latihan (main sendiri) atau mode tes: mainkan satu map pilihan
+    if ((DEBUG || opts.solo) && Number.isInteger(forced) && MAPS[forced]) plan = [forced];
+    score = {};
     const pool = GOD_IDS.slice().sort(() => Math.random() - 0.5);
     for (let i = 0; i < botCount; i++) {
       const id = 'b' + nextId++;
@@ -192,7 +195,11 @@ function createRoom(roomId, opts = {}) {
     const over = final || !humanLeft || qualified.length === 0;
     const winner = final && qualified.length ? qualified[0] : null;
     if (winner && players.get(winner) && !players.get(winner).bot) { const nm = players.get(winner).name; wins.set(nm, (wins.get(nm) || 0) + 1); }
-    broadcast({ t: 'roundEnd', qualified, eliminated, over, final, winner });
+    // poin: lolos 100, urutan finis memberi bonus, juara 300
+    qualified.forEach((id, i) => { score[id] = (score[id] || 0) + 100 + Math.max(0, 30 - i * 10); });
+    if (winner) score[winner] = (score[winner] || 0) + 300;
+    const standings = Object.entries(score).filter(([id]) => players.has(id)).map(([id, pts]) => ({ id, name: players.get(id).name, god: players.get(id).god, pts })).sort((a, b) => b.pts - a.pts).slice(0, 8);
+    broadcast({ t: 'roundEnd', qualified, eliminated, over, final, winner, standings });
     if (over) later(toLobby, 9000);
     else later(() => startRound(r.idx + 1, qualified.filter(id => players.has(id))), 6500);
   }
@@ -302,7 +309,7 @@ function createRoom(roomId, opts = {}) {
       players.set(id, { id, name, god, skin, bot: false, ws, state: null });
       ws.pid = id;
       if (!hostId || !players.has(hostId)) hostId = id;
-      send(ws, { t: 'welcome', id, addrs: opts.solo ? [] : lanAddrs(), mode: opts.solo ? 'solo' : 'lan' });
+      send(ws, { t: 'welcome', id, addrs: opts.solo ? [] : lanAddrs(), mode: opts.solo ? 'solo' : 'lan', code: opts.code || null });
       lobbyMsg();
     },
     ping(ws, m) { send(ws, { t: 'pong', c: m.c, s: Date.now() }); },
@@ -360,6 +367,7 @@ function createRoom(roomId, opts = {}) {
   return {
     id: roomId, H, leave,
     humanCount: () => humans().length,
+    size: () => players.size,
     destroy() { clearTimers(); clearInterval(botTick); clearInterval(snapTick); },
   };
 }
@@ -377,7 +385,21 @@ wss.on('connection', ws => {
       if (m.t === 'ping') return send(ws, { t: 'pong', c: m.c, s: Date.now() });
       if (m.t !== 'join') return;
       if (m.mode === 'solo') { const id = 'solo' + nextId++; ws.room = createRoom(id, { solo: true }); rooms.set(id, ws.room); }
-      else ws.room = rooms.get('lan');
+      else if (m.mode === 'room') {
+        // room privat berkode 4 huruf (dipakai di WiFi sekarang, dan untuk online nanti)
+        let code = String(m.code || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+        if (m.create || !code) {
+          do { code = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[(Math.random() * 24) | 0]).join(''); } while (rooms.has('R' + code));
+          rooms.set('R' + code, createRoom('R' + code, { code }));
+        }
+        const room = rooms.get('R' + code);
+        if (!room) return send(ws, { t: 'joinErr', msg: `Room ${code} tidak ditemukan.` });
+        if (room.size() >= 16) return send(ws, { t: 'joinErr', msg: 'Room penuh (maksimal 16 pemain).' });
+        ws.room = room;
+      } else {
+        if (rooms.get('lan').size() >= 16) return send(ws, { t: 'joinErr', msg: 'Room penuh (maksimal 16 pemain).' });
+        ws.room = rooms.get('lan');
+      }
     }
     const H = ws.room.H;
     if (!Object.hasOwn(H, m.t)) return;
@@ -390,7 +412,14 @@ wss.on('connection', ws => {
     if (room.id !== 'lan' && room.humanCount() === 0) { room.destroy(); rooms.delete(room.id); }
   });
   ws.on('error', () => {});
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 });
+// buang koneksi yang sudah mati (HP tidur, WiFi putus) supaya pemainnya tidak menggantung di room
+setInterval(() => {
+  for (const ws of wss.clients) { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; try { ws.ping(); } catch { /* */ } }
+}, 15000);
+process.on('uncaughtException', e => console.error('uncaughtException', e));
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log('\n  ⚡ ASGARDIAN server jalan!\n');

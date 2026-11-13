@@ -444,11 +444,12 @@ $('joinBtn').onclick = () => {
   const name = $('name').value.trim() || 'Dewa';
   try { localStorage.setItem('asg_name', name); localStorage.setItem('asg_god', G.god); } catch { /* */ }
   $('joinBtn').disabled = true; $('err').textContent = 'Menghubungkan...';
+  G.myName = name; G.code = null;
   connect(name);
 };
 $('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('joinBtn').click(); e.stopPropagation(); });
 $('name').addEventListener('keyup', e => e.stopPropagation());
-$('startBtn').onclick = () => send({ t: 'start' });
+$('startBtn').onclick = () => send({ t: 'start', level: $('mapSel').value === '' ? undefined : +$('mapSel').value });
 // pilihan mode di awal
 G.mode = 'lan';
 function pickMode(mode) {
@@ -456,30 +457,39 @@ function pickMode(mode) {
   $('menuTitle').textContent = mode === 'solo' ? 'MAIN SENDIRI' : 'MULTIPLAYER WIFI';
   $('menuTag').textContent = mode === 'solo' ? 'Kamu melawan bot. Pilih dewamu!' : 'Semua pemain harus di WiFi yang sama.';
   $('joinBtn').textContent = mode === 'solo' ? 'LANJUT' : 'MASUK ARENA';
+  $('roomRow').classList.toggle('hidden', mode === 'solo');
   $('err').textContent = '';
   show('menu'); beep(660, 0.06);
 }
 $('modeSolo').onclick = () => { initAudio(); pickMode('solo'); };
 $('modeLan').onclick = () => { initAudio(); pickMode('lan'); };
 $('backBtn').onclick = () => show('mode');
+$('createBtn').onclick = () => { G.create = true; $('code').value = ''; $('joinBtn').click(); };
+$('code').addEventListener('keydown', e => e.stopPropagation());
+$('code').addEventListener('keyup', e => e.stopPropagation());
+$('mapSel').innerHTML = '<option value="">Acak (3 ronde)</option>' + LEVELS.map((l, i) => `<option value="${i}">Latihan: ${l.name}</option>`).join('');
 $('quitBtn').onclick = () => { if (confirm('Keluar dari game ini?')) { G.leaving = true; if (ws) ws.close(); } };
 $('leaveBtn').onclick = () => { G.leaving = true; if (ws) ws.close(); };
 $('muteBtn').onclick = () => { initAudio(); setMuted(!muted); };
 $('muteBtn').textContent = muted ? '🔇' : '🔊';
 // pengaturan (tersimpan di perangkat)
-const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH };
+const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH, ts: 1 };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('asg_opts') || '{}')); } catch { /* */ }
 function applyOpts() {
   quality.mode = opts.q;
   if (opts.q !== 'auto') applyQuality({ high: 3, med: 2, low: 0 }[opts.q] ?? 3);
+  document.documentElement.style.setProperty('--ts', opts.ts); $('optT').value = opts.ts;
   $('optQ').value = opts.q; $('optS').value = opts.sens; $('optI').checked = !!opts.invert; $('optA').checked = !!opts.autoCam;
   try { localStorage.setItem('asg_opts', JSON.stringify(opts)); } catch { /* */ }
 }
 $('setBtn').onclick = () => $('settings').classList.toggle('hidden');
-$('optQ').onchange = e => { opts.q = e.target.value; if (opts.q === 'auto') applyQuality(3); applyOpts(); };
+$('optQ').onchange = e => { opts.q = e.target.value; if (opts.q === 'auto') applyQuality(3); applyOpts();
+// HP: mulai dari kualitas menengah dan partikel suasana lebih sedikit
+if (IS_TOUCH) { if (opts.q === 'auto') applyQuality(2); ambGeo.setDrawRange(0, 110); } };
 $('optS').oninput = e => { opts.sens = +e.target.value || 1; applyOpts(); };
 $('optI').onchange = e => { opts.invert = e.target.checked; applyOpts(); };
 $('optA').onchange = e => { opts.autoCam = e.target.checked; applyOpts(); };
+$('optT').oninput = e => { opts.ts = +e.target.value || 1; applyOpts(); };
 $('fsBtn').onclick = () => {
   const el = document.documentElement, on = document.fullscreenElement || document.webkitFullscreenElement;
   try { if (on) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (el.requestFullscreen || el.webkitRequestFullscreen).call(el); }
@@ -503,9 +513,10 @@ function renderLobby() {
   const solo = G.mode === 'solo';
   $('lobbyTitle').textContent = solo ? 'MAIN SENDIRI' : 'LOBBY';
   $('addr').classList.toggle('hidden', solo);
+  $('mapRow').classList.toggle('hidden', !solo || !isHost);
   const lan = G.addrs.filter(a => !a.includes('127.0.0.1'));
   $('addr').innerHTML = lan.length
-    ? `Ajak teman di WiFi yang sama, buka di browser HP:<br>${lan.map(a => `<b>${esc(a)}</b>`).join('<br>')}`
+    ? `Ajak teman di WiFi yang sama, buka di browser HP:<br>${lan.map(a => `<b>${esc(a)}</b>`).join('<br>')}` + (G.code ? `<br>Room privat — kode: <b>${esc(G.code)}</b>` : '')
     : 'Server tidak menemukan alamat WiFi. Pastikan komputer tersambung ke WiFi.';
   $('lobbyNote').textContent = G.serverPhase !== 'lobby' ? 'Game sedang berlangsung — kamu ikut di game berikutnya.'
     : solo ? 'Atur jumlah bot, lalu tekan MULAI. Sambil itu kamu bisa mencoba kontrol di pulau ini.'
@@ -516,7 +527,7 @@ function renderLobby() {
 function connect(name) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
   ws.onerror = () => { $('err').textContent = 'Tidak bisa terhubung ke server game. Pastikan server masih berjalan.'; };
-  ws.onopen = () => { send({ t: 'join', name, god: G.god, skin: save.skin, mode: G.mode }); ping(); };
+  ws.onopen = () => { const code = G.code || $('code').value.trim(); send({ t: 'join', name, god: G.god, skin: save.skin, mode: G.mode === 'solo' ? 'solo' : (G.create || code) ? 'room' : 'lan', code, create: !!G.create }); G.create = false; ping(); };
   ws.onmessage = ev => {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
@@ -524,6 +535,10 @@ function connect(name) {
   };
   ws.onclose = () => {
     if (QS.has('shot')) return endTest();
+    if (G.joinFail) { G.joinFail = false; return; } // gagal masuk room: tetap di menu dengan pesan errornya
+    // koneksi putus tak sengaja: coba sambung ulang sampai 3 kali
+    if (!G.leaving && G.me && (G.retry = (G.retry || 0) + 1) <= 3) { feed(`📡 Koneksi terputus, mencoba lagi (${G.retry}/3)...`); clearRound(); G.phase = 'menu'; G.me = null; setTimeout(() => connect(G.myName), 1800); return; }
+    G.retry = 0; G.code = null;
     if (G.leaving) { G.leaving = false; clearRound(); G.phase = 'menu'; G.me = null; show('mode'); enterMenuScene(); $('joinBtn').disabled = false; $('err').textContent = ''; return; }
     clearRound(); G.phase = 'menu'; G.me = null; show('menu'); enterMenuScene();
     $('joinBtn').disabled = false; $('err').textContent = 'Koneksi ke server terputus. Coba masuk lagi.';
@@ -533,7 +548,8 @@ function ping() { send({ t: 'ping', c: Date.now() }); }
 setInterval(() => { if (ws && ws.readyState === 1) ping(); }, 3000);
 
 const ON = {
-  welcome(m) { G.me = m.id; G.addrs = m.addrs || []; $('err').textContent = ''; },
+  welcome(m) { G.me = m.id; G.addrs = m.addrs || []; G.code = m.code || null; G.retry = 0; $('err').textContent = ''; },
+  joinErr(m) { G.joinFail = true; $('err').textContent = m.msg; $('joinBtn').disabled = false; try { ws.close(); } catch { /* */ } },
   pong(m) {
     const now = Date.now(), rtt = now - m.c;
     if (rtt < G.bestRtt + 15) { G.bestRtt = Math.min(G.bestRtt, rtt); G.offset = m.s + rtt / 2 - now; }
@@ -625,6 +641,7 @@ const ON = {
       if (navigator.vibrate) navigator.vibrate(iq ? [30, 40, 30] : 120);
       $('endNames').innerHTML += `<br><b style="color:#ffd866">+${gain} 🪙 koin</b>`;
     }
+    if (m.over && m.standings && m.standings.length) $('endNames').innerHTML += '<table>' + m.standings.map((s, i) => `<tr class="${s.id === G.me ? 'me' : ''}"><td>${i + 1}.</td><td>${esc(s.name)}</td><td>${s.pts} poin</td></tr>`).join('') + '</table>';
     G.celebrate = m.final && m.winner ? G.ents.get(m.winner) : null;
     if (G.celebrate) { G.celebrate.model.visible = true; cam.dist = 6; }
     $('end').classList.remove('hidden'); $('card').classList.add('hidden'); $('big').textContent = '';
@@ -801,23 +818,29 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
-let dragId = null, dragX = 0, dragY = 0;
-canvas.addEventListener('pointerdown', e => { if (dragId === null) { dragId = e.pointerId; dragX = e.clientX; dragY = e.clientY; } if (e.button === 2) abQ = true; specIdx++; });
+let dragId = null, dragX = 0, dragY = 0, joyId = null;
+const joyEl = $('joy'), knob = $('knob');
+canvas.addEventListener('pointerdown', e => {
+  // HP: sentuh sisi kiri layar -> joystick muncul di bawah jari
+  if (IS_TOUCH && e.pointerType !== 'mouse' && joyId === null && e.clientX < window.innerWidth * 0.45 && (G.phase === 'play' || G.phase === 'lobby')) {
+    joyEl.classList.add('dyn'); joyEl.style.left = e.clientX + 'px'; joyEl.style.top = e.clientY + 'px';
+    joyId = e.pointerId; moveJoy(e); return;
+  }
+  if (dragId === null) { dragId = e.pointerId; dragX = e.clientX; dragY = e.clientY; } if (e.button === 2) abQ = true; specIdx++; });
 window.addEventListener('pointermove', e => {
+  if (e.pointerId === joyId && joyEl.classList.contains('dyn')) return moveJoy(e);
   if (e.pointerId !== dragId) return;
   cam.lastDrag = performance.now();
   cam.yaw -= (e.clientX - dragX) * 0.006 * opts.sens;
   cam.pitch = Math.max(0.08, Math.min(1.2, cam.pitch + (e.clientY - dragY) * 0.004 * opts.sens * (opts.invert ? -1 : 1)));
   dragX = e.clientX; dragY = e.clientY;
 });
-const endDrag = e => { if (e.pointerId === dragId) dragId = null; };
+const endDrag = e => { if (e.pointerId === dragId) dragId = null; if (e.pointerId === joyId && joyEl.classList.contains('dyn')) { joyId = null; joy.x = joy.y = 0; knob.style.transform = ''; joyEl.classList.remove('dyn'); joyEl.style.left = joyEl.style.top = ''; } };
 window.addEventListener('pointerup', endDrag);
 window.addEventListener('pointercancel', endDrag);
 document.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('gesturestart', e => e.preventDefault());
 
-const joyEl = $('joy'), knob = $('knob');
-let joyId = null;
 function moveJoy(e) {
   const r = joyEl.getBoundingClientRect();
   let x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2);

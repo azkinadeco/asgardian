@@ -10,7 +10,7 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 
 ## Mode
 - **Main Sendiri** — ruang pribadi berisi bot (jumlah dan tingkat kesulitan bisa diatur).
-- **Multiplayer WiFi** — semua pemain di WiFi yang sama masuk ke ruang yang sama.
+- **Multiplayer WiFi** — semua pemain di WiFi yang sama masuk ke ruang yang sama. Bisa juga membuat room privat berkode 4 huruf (BUAT ROOM) dan membagikan kodenya.
 - **Online** — belum ada; server sudah mendukung beberapa ruang (`createRoom` di `server.js`), tinggal ditambah ruang berkode dan hosting.
 
 ## Struktur
@@ -21,6 +21,9 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 - `public/js/main.js` — render, kontrol, UI, jaringan di sisi pemain.
 - `tools/make_character.py`, `tools/make_props.py` — skrip Blender pembuat `public/assets/*.glb`:
   `/Applications/Blender.app/Contents/MacOS/Blender --background --python tools/make_props.py`
+
+## Tes otomatis
+`npm test` menjalankan simulasi bot di semua map dan tes protokol server (room berkode, mode latihan, papan skor).
 
 ## Mode tes
 `DEBUG=1 node server.js`, lalu buka `http://localhost:3000/?auto=1&level=N` untuk langsung masuk ke map nomor N (0–9).

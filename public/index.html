@@ -140,6 +140,11 @@
   @keyframes feedIn { from { transform:translateX(30px); opacity:0; } } @keyframes feedOut { to { opacity:0; transform:translateY(-6px); } }
   #profile { background:#2a1e4a; color:#fff; border-radius:12px; padding:8px 12px; font-size:13px; margin:0 0 10px; }
   #profile b { color:var(--gold); } #xpBar { height:8px; border-radius:5px; background:rgba(255,255,255,.2); margin-top:6px; overflow:hidden; } #xpBar i { display:block; height:100%; background:linear-gradient(#ffe58a,#f2a93b); }
+  #joy { transform:scale(var(--ts,1)); transform-origin:left bottom; }
+  .tbtn { transform:scale(var(--ts,1)); transform-origin:right bottom; }
+  #joy.dyn { left:0; bottom:auto; transform:translate(-50%,-50%) scale(var(--ts,1)); transform-origin:center; }
+  #end table { width:100%; border-collapse:collapse; font-size:14px; margin-top:8px; } #end td { padding:3px 6px; text-align:left; } #end td:last-child { text-align:right; color:var(--gold); }
+  #end tr.me td { color:var(--gold); font-weight:bold; }
   #btnAb.cd { filter:grayscale(1); opacity:.6; }
   #power { margin:-6px 0 12px; background:#2a1e4a; color:#fff; border-radius:12px; padding:8px 12px; font-size:13px; }
   #power b { color:var(--gold); }
@@ -160,6 +165,7 @@
   <div class="row"><span>Kecepatan kamera</span><input id="optS" type="range" min="0.4" max="2" step="0.1" value="1"></div>
   <div class="row"><span>Balik kamera atas-bawah</span><input id="optI" type="checkbox"></div>
   <div class="row"><span>Kamera otomatis mengikuti</span><input id="optA" type="checkbox"></div>
+  <div class="row"><span>Ukuran tombol sentuh</span><input id="optT" type="range" min="0.7" max="1.4" step="0.05" value="1"></div>
   <button id="fsBtn" class="btn" style="font-size:15px;padding:8px">LAYAR PENUH</button>
 </div>
 <div id="vig"></div><div class="bar" id="barT"></div><div class="bar" id="barB"></div>
@@ -189,6 +195,7 @@
     <div id="power"></div>
     <label>Kostum <span id="coins" style="float:right;text-transform:none"></span></label>
     <div id="skins" class="gods"></div>
+    <div id="roomRow" class="row" style="gap:6px"><input id="code" type="text" maxlength="4" placeholder="Kode room (opsional)" autocomplete="off" style="margin:0;text-transform:uppercase;font-size:15px"><button id="createBtn" class="btn" style="font-size:13px;padding:10px 8px;width:auto;white-space:nowrap">BUAT ROOM</button></div>
     <button id="joinBtn" class="btn">MASUK ARENA</button>
     <div id="err"></div>
   </div>
@@ -209,6 +216,7 @@
     </details>
     <div class="row"><span>Bot pengisi arena</span>
       <span class="step"><button id="botMinus">−</button><b id="botN">5</b><button id="botPlus">+</button></span></div>
+    <div class="row" id="mapRow"><span>Map</span><select id="mapSel" style="font:inherit;max-width:190px"></select></div>
     <div class="row" id="diffRow"><span>Kesulitan bot</span><span class="step" id="diffBtns"><button data-d="0">Mudah</button><button data-d="1">Normal</button><button data-d="2">Sulit</button></span></div>
     <button id="startBtn" class="btn">MULAI GAME</button>
     <div class="note" id="lobbyNote"></div>
