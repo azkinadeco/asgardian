@@ -185,7 +185,7 @@ export function applyArea(a, cx, cy, cz, e) {
   if (d > a.r || Math.abs(e.pos.y - cy) > 3.5 || e.shieldT > 0) return false;
   const k = d || 1;
   if (a.area === 'zap') knock(e, (dx / k) * 3, 8, (dz / k) * 3, 0.9);
-  else if (a.area === 'push') knock(e, (dx / k) * 12, 6, (dz / k) * 12, 0.5);
+  else if (a.area === 'push') knock(e, (dx / k) * 9, 6, (dz / k) * 9, 0.5);
   else if (a.area === 'confuse') e.confuseT = 2.5;
   return true;
 }
@@ -194,6 +194,7 @@ export function botWantsAbility(e, L, ents) {
   if (e.abCd > 0 || e.stun > 0 || Math.random() > 0.02) return false;
   const a = ABILITIES[e.god];
   if (!a) return false;
+  if (a.area && L.survival && Math.random() < 0.6) return false; // di ronde bertahan bot lebih jarang menyerang
   if (a.area) return ents.some(o => o !== e && o.active && Math.hypot(o.pos.x - e.pos.x, o.pos.z - e.pos.z) < a.r * 0.8 && Math.abs(o.pos.y - e.pos.y) < 3);
   if (a.self === 'blink' || a.self === 'charge') {
     const k = a.self === 'blink' ? 6 : 9;
@@ -210,12 +211,17 @@ export function botInput(e, L, t, dt) {
   let tx, tz;
   if (L.survival) {
     ai.re -= dt;
-    if (!ai.tile || ai.re <= 0 || ai.tile.time < t + 1.7) {
-      const safe = L.tiles.filter(T => T.time > t + 3.2);
+    if (!ai.tile || ai.re <= 0 || ai.tile.time < t + (L.climb ? 7 : 1.7)) {
+      const safe = L.tiles.filter(T => T.time > t + (L.climb ? 9 : 3.2));
       const near = safe.filter(T => Math.hypot(T.P.x - e.pos.x, T.P.z - e.pos.z) < 9.5);
       const pool = near.length ? near : safe;
+      if (L.climb) { // map memanjat: ambil pijakan aman yang paling dekat (jarak + beda tinggi)
+        let best = null, bc = 1e9;
+        for (const T of safe) { const c = Math.hypot(T.P.x - e.pos.x, T.P.z - e.pos.z) + Math.abs(T.P.y - e.pos.y) * 4; if (c < bc) { bc = c; best = T; } }
+        ai.tile = best;
+      } else
       ai.tile = pool.length ? pool[(Math.random() * pool.length) | 0] : null;
-      ai.re = 1.5 + Math.random() * 2.5;
+      ai.re = L.climb ? 0.6 : 1.5 + Math.random() * 2.5;
     }
     if (!ai.tile) return NONE;
     tx = ai.tile.P.x + ai.lane * 1.1; tz = ai.tile.P.z + ai.lane2 * 1.1;

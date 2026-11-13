@@ -174,6 +174,23 @@ function noise(dur = 0.2, vol = 0.06, type = 'lowpass', f0 = 800, f1 = 0) {
     src.start(t, Math.random() * 0.5); src.stop(t + dur);
   } catch { /* abaikan */ }
 }
+// suara suasana: derau tersaring yang berulang pelan (angin, ombak, gemuruh lava, gua)
+let ambNode = null;
+function ambience(kind) {
+  if (!actx || !master) return;
+  try {
+    if (ambNode) { ambNode.g.gain.linearRampToValueAtTime(0.0001, actx.currentTime + 0.5); const old = ambNode; setTimeout(() => { try { old.src.stop(); old.lfo.stop(); } catch { /* */ } }, 700); ambNode = null; }
+    const cfg = { wind: ['bandpass', 420, 0.03, 0.13], sea: ['lowpass', 650, 0.045, 0.22], lava: ['lowpass', 130, 0.09, 0.4], cave: ['bandpass', 240, 0.035, 0.09], space: ['bandpass', 900, 0.012, 0.05] }[kind];
+    if (!cfg) return;
+    if (!noiseBuf) noise(0.01, 0.0001);
+    const src = actx.createBufferSource(), f = actx.createBiquadFilter(), g = actx.createGain(), lfo = actx.createOscillator(), lg = actx.createGain();
+    src.buffer = noiseBuf; src.loop = true; f.type = cfg[0]; f.frequency.value = cfg[1]; g.gain.value = cfg[2];
+    lfo.frequency.value = cfg[3]; lg.gain.value = cfg[2] * 0.6; lfo.connect(lg).connect(g.gain);
+    src.connect(f).connect(g).connect(master); src.start(); lfo.start();
+    ambNode = { src, g, lfo };
+  } catch { /* abaikan */ }
+}
+const AMB_SOUND = { 0: 'wind', 1: 'space', 2: 'wind', 3: 'sea', 4: 'lava', 5: 'cave', 6: 'wind', 7: 'wind', 8: 'wind', 9: 'sea', plaza: 'wind' };
 const SFX = {
   jump: () => { beep(420, 0.14, 'triangle', 0.06, 300); noise(0.1, 0.03, 'highpass', 1200); },
   dive: () => { noise(0.28, 0.07, 'bandpass', 500, 1800); beep(300, 0.18, 'sawtooth', 0.03, -150); },
@@ -298,21 +315,30 @@ const G = {
 };
 try { G.god = localStorage.getItem('asg_god') || G.god; $('name').value = localStorage.getItem('asg_name') || ''; } catch { /* private mode */ }
 // koin & kostum (disimpan di perangkat)
-const save = { coins: 0, owned: ['default'], skin: 'default' };
+const save = { coins: 0, owned: ['default'], skin: 'default', xp: 0, games: 0, wins: 0, qual: 0, tut: 0 };
+const levelOf = xp => Math.floor(Math.sqrt(xp / 60)) + 1;
+function renderProfile() {
+  const lv = levelOf(save.xp), a = (lv - 1) * (lv - 1) * 60, b = lv * lv * 60;
+  $('profile').innerHTML = `<b>Level ${lv}</b> · 👑 ${save.wins} menang · ${save.qual} kali lolos · ${save.games} game<div id="xpBar"><i style="width:${Math.round((save.xp - a) / (b - a) * 100)}%"></i></div>`;
+}
 try { Object.assign(save, JSON.parse(localStorage.getItem('asg_save') || '{}')); } catch { /* */ }
 if (!SKINS.some(s => s.id === save.skin) || !save.owned.includes(save.skin)) save.skin = 'default';
 function persist() { try { localStorage.setItem('asg_save', JSON.stringify(save)); } catch { /* */ } }
 function addCoins(n) { save.coins += n; persist(); renderSkins(); }
+function addXp(n) { const before = levelOf(save.xp); save.xp += n; persist(); renderProfile(); renderSkins(); if (levelOf(save.xp) > before) { feed(`⭐ Naik ke Level ${levelOf(save.xp)}!`); SFX.win(); } }
 function renderSkins() {
   $('coins').textContent = '🪙 ' + save.coins + ' koin';
   const el = $('skins');
   el.innerHTML = '';
   for (const s of SKINS) {
+    const locked = s.lvl && levelOf(save.xp) < s.lvl;
+    if (s.lvl && !locked && !save.owned.includes(s.id)) save.owned.push(s.id);
     const own = save.owned.includes(s.id), b = document.createElement('button');
     const col = s.robe !== undefined ? '#' + s.robe.toString(16).padStart(6, '0') : godColor(G.god);
     b.className = 'god' + (s.id === save.skin ? ' sel' : '');
-    b.innerHTML = `<i style="background:${col}"></i>${s.name}<small>${own ? (s.id === save.skin ? 'dipakai' : 'punya') : '🪙 ' + s.cost}</small>`;
+    b.innerHTML = `<i style="background:${col}"></i>${s.name}<small>${locked ? '🔒 Lv ' + s.lvl : own ? (s.id === save.skin ? 'dipakai' : 'punya') : '🪙 ' + s.cost}</small>`;
     b.onclick = () => {
+      if (locked) { $('err').textContent = `Kostum ${s.name} terbuka di Level ${s.lvl}.`; return; }
       if (!own) {
         if (save.coins < s.cost) { $('err').textContent = `Koin belum cukup untuk kostum ${s.name} (butuh ${s.cost}).`; beep(200, 0.15, 'sawtooth'); return; }
         save.coins -= s.cost; save.owned.push(s.id); beep(880, 0.2, 'triangle', 0.09, 440);
@@ -409,6 +435,7 @@ function renderGods() {
 }
 renderGods();
 renderSkins();
+renderProfile();
 
 let ws = null;
 function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
@@ -543,12 +570,14 @@ const ON = {
     G.fin = m.n;
     if (e) { burst(e.pos, CONFETTI, 36, 10); for (const sx of [-5, 5]) burst(tmpV.set(e.pos.x + sx, e.pos.y + 1, e.pos.z), CONFETTI, 18, 12); ring(e.pos, 0xffe07a, 5); if (m.id !== G.me) SFX.cheer(); deactivate(e); }
     if (m.id === G.me) { flash('LOLOS!', 1800); SFX.win(); }
+    feed(`✅ ${nameOf(m.id)} lolos (${m.n}/${m.Q})`);
   },
   dead(m) {
     const e = G.ents.get(m.id);
     G.alive = m.alive;
     if (e) deactivate(e);
     if (m.id === G.me) { flash('JATUH!', 1500); SFX.lose(); }
+    feed(`💀 ${nameOf(m.id)} gugur — tersisa ${m.alive}`);
   },
   picked(m) {
     const L = G.L;
@@ -576,7 +605,7 @@ const ON = {
     if (m.id === G.me) beep(700, 0.25, 'triangle', 0.09, 500);
     if (a.area) for (const e of G.ents.values()) {
       if (e === c || !e.local || !e.active) continue;
-      if (applyArea(a, c.pos.x, c.pos.y, c.pos.z, e) && e.id === G.me && a.area === 'confuse') flash('KONTROL TERBALIK!', 1500);
+      if (applyArea(a, c.pos.x, c.pos.y, c.pos.z, e) && e.id === G.me) { feed(`⚡ Kamu kena ${a.name} dari ${c.name}!`); if (a.area === 'confuse') flash('KONTROL TERBALIK!', 1500); if (navigator.vibrate) navigator.vibrate(80); }
     }
   },
   roundEnd(m) {
@@ -591,6 +620,9 @@ const ON = {
     if (was) {
       const gain = 5 + (iq ? 15 : 0) + (m.final && m.winner === G.me ? 60 : 0);
       addCoins(gain);
+      save.games += m.over ? 1 : 0; if (iq) save.qual++; if (m.final && m.winner === G.me) save.wins++;
+      addXp(10 + (iq ? 25 : 0) + (m.final && m.winner === G.me ? 100 : 0));
+      if (navigator.vibrate) navigator.vibrate(iq ? [30, 40, 30] : 120);
       $('endNames').innerHTML += `<br><b style="color:#ffd866">+${gain} 🪙 koin</b>`;
     }
     G.celebrate = m.final && m.winner ? G.ents.get(m.winner) : null;
@@ -648,8 +680,8 @@ function startRound(m) {
   prepLevel(L);
   const n = m.contenders.length;
   m.contenders.forEach((id, i) => addEnt(id, i, n));
-  G.round = m; G.roundOver = false; G.fin = 0; G.alive = n; G.lastCount = 99; G.apples = 0;
-  music.setMood(lv); setAmbient(lv); setLights(lv);
+  G.round = m; G.roundOver = false; G.fin = 0; G.alive = n; G.lastCount = 99; G.apples = 0; G.hintI = 0;
+  music.setMood(lv); setAmbient(lv === 9 ? 3 : lv); setLights(lv === 9 ? 3 : lv); ambience(AMB_SOUND[lv]);
   G.phase = 'play';
   cam.yaw = 0; cam.pitch = 0.42; cam.init = false;
   startRoundUI(m, lv, n);
@@ -687,7 +719,7 @@ function addEnt(id, i, n) {
     e.name = info.name; e.bot = !!info.bot; e.god = info.god;
     e.local = id === G.me; // bot disimulasikan server
     e.model = makeGod(GODS.find(g => g.id === info.god) || GODS[0], info.skin);
-    const label = makeLabel(info.name, id === G.me);
+    const label = makeLabel((info.wins ? '👑' + (info.wins > 1 ? info.wins : '') + ' ' : '') + info.name, id === G.me);
     label.position.y = 2.4; e.model.add(label);
     e.shadow = new THREE.Mesh(shGeo, shMat); e.shadow.rotation.x = -Math.PI / 2;
     scene.add(e.model, e.shadow);
@@ -707,7 +739,7 @@ function enterLobbyScene() {
   G.round = { lobby: true, type: 'lobby', startAt: serverNow() - 60000, contenders: [], limit: 0, Q: 0, idx: -1 };
   G.lastCount = 0; G.roundOver = false;
   cam.yaw = 0; cam.pitch = 0.42; cam.init = false;
-  music.setMood(-1); setAmbient('plaza'); setLights('def');
+  music.setMood(-1); setAmbient('plaza'); setLights('def'); ambience('wind');
   syncLobbyEnts();
   $('touch').classList.toggle('hidden', !IS_TOUCH);
 }
@@ -732,6 +764,12 @@ function startRoundUI(m, lv, n) {
   show('hud');
 }
 
+function feed(text) {
+  const el = $('feed'), d = document.createElement('div');
+  d.textContent = text; el.appendChild(d);
+  while (el.children.length > 4) el.firstChild.remove();
+  setTimeout(() => d.remove(), 4800);
+}
 let bigTimer = 0;
 function flash(text, ms) {
   const el = $('big');
@@ -755,7 +793,9 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Space') { jumpBuf = 0.15; e.preventDefault(); }
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyE' || e.code === 'KeyF') diveQ = true;
   if (e.code === 'KeyQ') abQ = true;
-  if (e.code === 'KeyR') emoteQ = true;
+  if (e.code === 'KeyR') emoteQ = 5;
+  if (e.code === 'Digit1') emoteQ = 8;
+  if (e.code === 'Digit2') emoteQ = 9;
   if (e.code.startsWith('Arrow')) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -794,7 +834,8 @@ joyEl.addEventListener('pointercancel', endJoy);
 $('btnJump').addEventListener('pointerdown', e => { jumpBuf = 0.15; e.preventDefault(); });
 $('btnDive').addEventListener('pointerdown', e => { diveQ = true; e.preventDefault(); });
 $('btnAb').addEventListener('pointerdown', e => { abQ = true; e.preventDefault(); });
-$('btnEmote').addEventListener('pointerdown', e => { emoteQ = true; e.preventDefault(); });
+let emoteCycle = 0;
+$('btnEmote').addEventListener('pointerdown', e => { emoteQ = [5, 8, 9][emoteCycle++ % 3]; e.preventDefault(); });
 
 const inp = { x: 0, z: 0, jump: false, dive: false };
 const NOINP = { x: 0, z: 0, jump: false, dive: false };
@@ -829,7 +870,8 @@ function tickGame(dt, now) {
     if (e.local) {
       const mine = e.id === G.me;
       const i = !playing ? NOINP : readInput();
-      if (playing && e.abCd <= 0 && abQ) {
+      if (playing && e.abCd <= 0 && abQ && L.survival && t < 8) feed('⏳ Kekuatan aktif setelah 8 detik di ronde bertahan');
+      else if (playing && e.abCd <= 0 && abQ) {
         const a = ABILITIES[e.god] || ABILITIES.zeus;
         if (a.self) castSelf(e); else e.abCd = AB_CD;
         send({ t: 'ab', id: e.id });
@@ -839,9 +881,9 @@ function tickGame(dt, now) {
       if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); }
       if (e.speedT > 0 && e.grounded) burst(e.pos, [0x7fe6ff, 0xffffff], 1, 1.5);
       if (e.anim === 1 && (e.stepAcc = (e.stepAcc || 0) + dt * Math.hypot(e.vel.x, e.vel.z)) > 1.7) { e.stepAcc = 0; SFX.step(); }
-      if (emoteQ) { e.emoteT = 1.6; emoteQ = false; }
+      if (emoteQ) { e.emoteT = emoteQ === 5 ? 1.6 : 2.6; e.emoteK = emoteQ === true ? 5 : emoteQ; emoteQ = false; }
       e.emoteT = (e.emoteT || 0) - dt;
-      if (e.emoteT > 0 && e.anim === 0) e.anim = 5;
+      if (e.emoteT > 0 && e.anim === 0) e.anim = e.emoteK || 5;
       separate(e, list);
       if (playing) diveBump(e, list);
       if (playing) {
@@ -855,7 +897,7 @@ function tickGame(dt, now) {
       if (e.fx) {
         if (e.fx === 'jump') { if (mine) { SFX.jump(); jumpBuf = 0; } burst(e.pos, [0xffffff], 4, 2.5); e.sq = 1.28; }
         else if (e.fx === 'land') { e.sq = 0.74; burst(e.pos, [0xffffff, 0xf2efe6], 5, 2.2); if (mine) { SFX.land(); cam.dip = 0.25; } }
-        else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { SFX.hit(); cam.shake = 0.45; } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); }
+        else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { SFX.hit(); cam.shake = 0.45; if (navigator.vibrate) navigator.vibrate(60); } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); }
         else if (e.fx === 'dive' && mine) SFX.dive();
         else if (e.fx === 'block') { ring(e.pos, 0xb9a6ff, 1.6); if (mine) beep(900, 0.08, 'sine', 0.06); }
         else if (e.fx === 'respawn') { if (mine) SFX.respawn(); burst(e.pos, [0x9ff0ff, 0xffffff], 10, 4); }
@@ -988,6 +1030,14 @@ function tickGame(dt, now) {
   $('spec').classList.toggle('hidden', !spectating);
   if (spectating) $('specTxt').textContent = '👁 Menonton: ' + target.name + (actives.length > 1 ? ' (ketuk layar untuk ganti)' : '');
 
+  // petunjuk singkat untuk dua game pertama
+  if (!R.lobby && save.tut < 2 && me && me.active) {
+    const hints = [[1, IS_TOUCH ? '👉 Joystick kiri untuk bergerak, tombol LOMPAT untuk melompat' : '👉 WASD untuk bergerak, Spasi untuk melompat'],
+      [7, IS_TOUCH ? '👉 TERJANG untuk meluncur & menabrak lawan' : '👉 Shift untuk menerjang & menabrak lawan'],
+      [13, (IS_TOUCH ? '👉 Tombol ungu' : '👉 Tombol Q') + ' = kekuatan ' + (ABILITIES[me.god] || {}).name]];
+    G.hintI = G.hintI || 0;
+    if (G.hintI < hints.length && t > hints[G.hintI][0]) { feed(hints[G.hintI][1]); if (++G.hintI === hints.length) { save.tut++; persist(); } }
+  }
   // hitung mundur
   if (t < 0) {
     const n = Math.ceil(-t);

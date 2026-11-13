@@ -22,8 +22,12 @@ export const SKINS = [
   { id: 'default', name: 'Asli', cost: 0 },
   { id: 'es', name: 'Es', cost: 100, robe: 0xbfe9ff, trim: 0x4dc3ff },
   { id: 'mawar', name: 'Mawar', cost: 100, robe: 0xff8fb3, trim: 0xffffff },
+  { id: 'laut', name: 'Laut', cost: 120, robe: 0x2fc4b2, trim: 0xeafff9 },
+  { id: 'api', name: 'Api', cost: 120, robe: 0xff7a2b, trim: 0x2b2b2b },
   { id: 'bayangan', name: 'Bayangan', cost: 150, robe: 0x2a2438, trim: 0x9b5cff },
   { id: 'emas', name: 'Emas', cost: 200, robe: 0xf2c14e, trim: 0xffffff },
+  { id: 'kerajaan', name: 'Kerajaan', cost: 0, lvl: 5, robe: 0x6a3fb8, trim: 0xf2c14e },
+  { id: 'legenda', name: 'Legenda', cost: 0, lvl: 10, robe: 0xfdfdfd, trim: 0xffd23a },
 ];
 const hex = c => '#' + c.toString(16).padStart(6, '0');
 export const godColor = id => hex((GODS.find(g => g.id === id) || GODS[0]).robe);
@@ -380,6 +384,11 @@ function animateRig(g, anim, t, extra) {
   } else if (anim === 5) { // sorak: lompat-lompat, tangan melambai
     const h = Math.abs(Math.sin(t * 8));
     azl = 1.7 + Math.sin(t * 16) * 0.32; azr = 1.7 - Math.sin(t * 16) * 0.32; by = h * 0.34; ll = 0.3 * h; lr = -0.3 * h; hx = -0.22; rz = Math.sin(t * 8) * 0.1; eye = 0.7; sy = 1 + h * 0.05;
+  } else if (anim === 8) { // menari: pinggul bergoyang, tangan naik-turun bergantian
+    const d = Math.sin(t * 9), d2 = Math.sin(t * 4.5);
+    rz = d * 0.16; bT = d2 * 0.5; azl = 0.9 + d * 0.8; azr = 0.9 - d * 0.8; ll = Math.max(0, d) * 0.5; lr = Math.max(0, -d) * 0.5; by = Math.abs(d) * 0.1; hy = -d2 * 0.3; eye = 0.8;
+  } else if (anim === 9) { // melambai: satu tangan tinggi berayun
+    azl = 2.1 + Math.sin(t * 13) * 0.35; azr = 0.1; hy = 0.25; rz = 0.06; hx = -0.1; eye = 0.9;
   } else if (anim === 6) { // kecewa: menunduk, bahu turun
     hx = 0.5; bx = 0.22; azl = azr = 0.0; al = ar = 0.15; rz = Math.sin(t * 1.4 + sd) * 0.04; eye = 0.8; sy = 0.97;
   } else if (anim === 7) { // siap-siap sebelum start: kuda-kuda sambil memantul

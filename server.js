@@ -60,8 +60,9 @@ const MAPS = [
   { type: 'collect', limit: 110 },   // 6 Golden Garden
   { type: 'final', limit: 150 },     // 7 Yggdrasil Climb
   { type: 'race', limit: 130 },      // 8 Jotunheim Slide
+  { type: 'survival', limit: 85 },   // 9 Tidal Rise
 ];
-const POOLS = [[0, 3, 4, 6, 8], [1, 5], [2, 7]];       // ronde 1: balapan, ronde 2: bertahan, ronde 3: final
+const POOLS = [[0, 3, 4, 6, 8], [1, 5, 9], [2, 7]];       // ronde 1: balapan, ronde 2: bertahan, ronde 3: final
 const wins = new Map();              // nama -> jumlah mahkota
 const GOD_IDS = ['zeus', 'poseidon', 'athena', 'hades', 'apollo', 'ares', 'hermes', 'thor', 'loki', 'odin'];
 const INTRO_MS = 6000;
@@ -233,6 +234,7 @@ function createRoom(roomId, opts = {}) {
   function cast(id) {
     const p = players.get(id);
     if (!p || !round || round.over || Date.now() < round.startAt || !round.contenders.includes(id)) return;
+    if (round.type === 'survival' && Date.now() < round.startAt + 8000) return; // ronde bertahan: kekuatan baru aktif setelah 8 detik
     const now = Date.now();
     if (p.abAt && now - p.abAt < 10000) return;
     p.abAt = now;
@@ -296,7 +298,7 @@ function createRoom(roomId, opts = {}) {
       const id = 'p' + nextId++;
       const name = String(m.name || '').replace(/[<>&"]/g, '').trim().slice(0, 14) || 'Dewa ' + id.slice(1);
       const god = GOD_IDS.includes(m.god) ? m.god : 'zeus';
-      const skin = ['default', 'es', 'mawar', 'bayangan', 'emas'].includes(m.skin) ? m.skin : 'default';
+      const skin = ['default', 'es', 'mawar', 'laut', 'api', 'bayangan', 'emas', 'kerajaan', 'legenda'].includes(m.skin) ? m.skin : 'default';
       players.set(id, { id, name, god, skin, bot: false, ws, state: null });
       ws.pid = id;
       if (!hostId || !players.has(hostId)) hostId = id;

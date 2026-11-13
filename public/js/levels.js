@@ -15,6 +15,7 @@ export const LEVELS = [
   { name: 'Golden Garden', sub: 'Taman Hesperides', type: 'collect', goal: 'Kumpulkan 5 apel emas!' },
   { name: 'Yggdrasil Climb', sub: 'Pohon Dunia Yggdrasil', type: 'final', goal: 'Panjat pohon dunia, rebut mahkotanya!' },
   { name: 'Jotunheim Slide', sub: 'Negeri Es Jotunheim', type: 'race', goal: 'Hati-hati, lantainya licin!' },
+  { name: 'Tidal Rise', sub: 'Menara Karang Poseidon', type: 'survival', goal: 'Air naik! Panjat setinggi mungkin!' },
 ];
 
 const HAS_DOM = typeof document !== 'undefined';
@@ -637,7 +638,7 @@ function sea(L, y, color, emissive, size = 700) {
   const mat = lam(tex ? new THREE.Color(color).multiplyScalar(1.7) : color, o);
   const m = mesh(new THREE.PlaneGeometry(size, size, 1, 1), mat, 0, y - 0.25, 60, L.group);
   m.rotation.x = -Math.PI / 2;
-  L.seaY = y; L.seaColor = color;
+  L.seaY = y; L.seaColor = color; L.seaMeshes = [m];
   // bagian tengah bergelombang (di sekitar lintasan), tepinya meredam ke permukaan datar
   const N = 44, W = 240, wave = HAS_DOM ? new THREE.PlaneGeometry(W, W, N, N) : null;
   let wm = null;
@@ -645,6 +646,7 @@ function sea(L, y, color, emissive, size = 700) {
     wave.rotateX(-Math.PI / 2);
     if (tex) { const uv = wave.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * W / 22, uv.getY(i) * W / 22); }
     wm = mesh(wave, mat, 0, y, 50, L.group);
+    L.seaMeshes.push(wm);
   }
   let frame = 0;
   L.updaters.push(t => {
@@ -938,7 +940,38 @@ function animateEnv(L) {
   });
 }
 
-const BUILDERS = [asgard, galaxy, olympus, tidal, muspel, hades, garden, yggdrasil, jotunheim];
+// ============================================================ MAP 10: TIDAL RISE (bertahan, air naik)
+function rising(seed) {
+  const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
+  L.survival = true; L.climb = true; L.sky = ['#1f8fd6', '#7fe0e8', '#d9fff5'];
+  const Y0 = -5.2, RATE = 0.3, T0 = 4;
+  sea(L, Y0, 0x1fa3c9, 0x0a4a66);
+  L.killY = Y0 - 0.6;
+  L.tiles = [];
+  const tile = P => { L.tiles.push({ P, time: T0 + (P.y - Y0 - 0.3) / RATE }); return P; };
+  tile(L.addPlat(0, 0, 0, 14, 14, { theme: 'sand', h: 6 }));
+  const dir = rnd() < 0.5 ? 1 : -1;
+  for (let i = 0; i < 14; i++) {
+    const a = dir * i * 0.6 + 0.4;
+    tile(L.addPlat(Math.cos(a) * 11, 0.9 * (i + 1), Math.sin(a) * 11, 5, 5, { theme: i % 2 ? 'coral' : 'sand', h: 1.2 }));
+  }
+  tile(L.addPlat(0, 13.5, 0, 12, 12, { theme: 'coral', h: 1.4 }));
+  spinner(L, 0, 13.5, 0, 3.6, 2.2 * dir, rnd() * 6, 0x9b5cff);
+  // tiang tengah (hiasan) menopang puncak
+  mesh(new THREE.CylinderGeometry(1.6, 2.4, 14, 12), lam(0xffb3a0), 0, 5.4, 0, g);
+  L.updaters.push(t => {
+    const lvl = Y0 + Math.max(0, t - T0) * RATE;
+    L.seaY = lvl; L.killY = lvl - 0.6;
+    L.seaMeshes[0].position.y = lvl - 0.25; if (L.seaMeshes[1]) L.seaMeshes[1].position.y = lvl;
+  });
+  put(g, 'lighthouse', -30, -5, 24, 1.6, 1.6, 1.6); put(g, 'lighthouse', 32, -5, -26, 1.3, 1.3, 1.3);
+  for (let i = 0; i < 22; i++) { const a = rnd() * 6.28, r = 22 + rnd() * 60, sc = 1.6 + rnd() * 2.6; put(g, 'coral', Math.cos(a) * r, -5.6, Math.sin(a) * r, sc, sc, sc, [0xff8a7a, 0xffc36b, 0x9b7bff, 0x53d6b6][i % 4], rnd() * 6); }
+  for (let i = 0; i < 14; i++) cloud(g, (rnd() - 0.5) * 200, 30 + rnd() * 22, (rnd() - 0.5) * 200, 4 + rnd() * 4);
+  return L;
+}
+
+const BUILDERS = [asgard, galaxy, olympus, tidal, muspel, hades, garden, yggdrasil, jotunheim, rising];
 export function buildLevel(idx, seed) {
   const L = BUILDERS[idx % BUILDERS.length](seed || 1);
   animateEnv(L);

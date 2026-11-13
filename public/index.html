@@ -135,6 +135,11 @@
   #end .names span img { width:20px; height:20px; border-radius:50%; vertical-align:-4px; margin-right:4px; background:linear-gradient(#bfe3ff,#fff0c9); }
   #quitBtn { position:fixed; z-index:5; top:max(8px,env(safe-area-inset-top)); left:max(8px,env(safe-area-inset-left)); width:42px; height:42px; border-radius:50%; border:0; background:rgba(42,30,74,.72); font-size:19px; cursor:pointer; touch-action:manipulation; }
   #top { padding-left:58px !important; }
+  #feed { position:fixed; z-index:4; right:max(8px,env(safe-area-inset-right)); top:58px; display:flex; flex-direction:column; align-items:flex-end; gap:4px; pointer-events:none; }
+  #feed div { background:rgba(42,30,74,.72); color:#fff; border-radius:10px; padding:4px 10px; font-size:13px; animation:feedIn .25s ease-out, feedOut .5s ease-in 4.2s forwards; }
+  @keyframes feedIn { from { transform:translateX(30px); opacity:0; } } @keyframes feedOut { to { opacity:0; transform:translateY(-6px); } }
+  #profile { background:#2a1e4a; color:#fff; border-radius:12px; padding:8px 12px; font-size:13px; margin:0 0 10px; }
+  #profile b { color:var(--gold); } #xpBar { height:8px; border-radius:5px; background:rgba(255,255,255,.2); margin-top:6px; overflow:hidden; } #xpBar i { display:block; height:100%; background:linear-gradient(#ffe58a,#f2a93b); }
   #btnAb.cd { filter:grayscale(1); opacity:.6; }
   #power { margin:-6px 0 12px; background:#2a1e4a; color:#fff; border-radius:12px; padding:8px 12px; font-size:13px; }
   #power b { color:var(--gold); }
@@ -158,6 +163,7 @@
   <button id="fsBtn" class="btn" style="font-size:15px;padding:8px">LAYAR PENUH</button>
 </div>
 <div id="vig"></div><div class="bar" id="barT"></div><div class="bar" id="barB"></div>
+<div id="feed"></div>
 <div id="rotate">📱 Putar HP ke posisi mendatar supaya lebih enak dimainkan</div>
 
 <div id="mode" class="screen">
@@ -175,6 +181,7 @@
     <button id="backBtn" class="link">‹ Ganti mode</button>
     <h1 style="font-size:26px" id="menuTitle">ASGARDIAN</h1>
     <div class="tag" id="menuTag">Party Royale Para Dewa ⚡</div>
+    <div id="profile"></div>
     <label for="name">Nama kamu</label>
     <input id="name" type="text" maxlength="14" placeholder="Nama dewa-mu" autocomplete="off">
     <label>Pilih dewa</label>
@@ -216,7 +223,7 @@
   <div id="card" class="hidden"><small id="cardSub"></small><b id="cardName"></b><span id="cardGoal"></span></div>
   <div id="end" class="hidden"><small id="endSmall"></small><h2 id="endTitle"></h2><div class="you" id="endYou"></div><div class="names" id="endNames"></div></div>
   <div id="spec" class="hidden"><span class="pill" id="specTxt"></span></div>
-  <div id="help" class="pill">WASD gerak · Spasi lompat · Shift terjang · Q kekuatan dewa · R sorak · Drag mouse putar kamera</div>
+  <div id="help" class="pill">WASD gerak · Spasi lompat · Shift terjang · Q kekuatan dewa · R sorak · 1 menari · 2 melambai · Drag mouse putar kamera</div>
   <div id="touch" class="hidden">
     <div id="joy"><div id="knob"></div></div>
     <button id="btnEmote" class="tbtn">🙌</button>
