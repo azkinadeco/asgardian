@@ -45,6 +45,39 @@ function canvasTex(w, h, draw) {
   return t;
 }
 
+// pendar cahaya (sprite aditif) untuk benda bercahaya
+let glowTex;
+function glow(parent, x, y, z, color, size) {
+  if (!HAS_DOM) return null;
+  glowTex = glowTex || canvasTex(64, 64, c => { const g = c.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.35, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64); });
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  s.position.set(x, y, z); s.scale.set(size, size, 1);
+  parent.add(s);
+  return s;
+}
+// sisi platform: bibir warna permukaan + lapisan tanah / susunan batu
+function sideTex(key, th) {
+  if (!HAS_DOM) return null;
+  const k = 'side_' + key;
+  if (!texCache[k]) texCache[k] = canvasTex(128, 128, c => {
+    const hex = v => '#' + v.toString(16).padStart(6, '0');
+    c.fillStyle = hex(th.side); c.fillRect(0, 0, 128, 128);
+    const r = rng(key.length * 97 + 5);
+    if (th.brick) {
+      c.strokeStyle = 'rgba(0,0,0,0.16)'; c.lineWidth = 2;
+      for (let row = 0; row < 4; row++) { const y = 24 + row * 26; c.beginPath(); c.moveTo(0, y); c.lineTo(128, y); c.stroke(); for (let x = (row % 2) * 32; x < 128; x += 64) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 26); c.stroke(); } }
+      c.fillStyle = 'rgba(255,255,255,0.10)'; for (let i = 0; i < 10; i++) c.fillRect(r() * 128, 24 + r() * 100, 10 + r() * 20, 3);
+    } else {
+      for (const [y, a] of [[44, 0.10], [72, 0.16], [100, 0.24]]) { c.fillStyle = `rgba(0,0,0,${a})`; c.beginPath(); c.moveTo(0, y); for (let x = 0; x <= 128; x += 16) c.lineTo(x, y + Math.sin(x / 128 * Math.PI * 4 + y) * 4); c.lineTo(128, 128); c.lineTo(0, 128); c.fill(); }
+      c.fillStyle = 'rgba(255,255,255,0.14)'; for (let i = 0; i < 12; i++) { c.beginPath(); c.arc(r() * 128, 40 + r() * 80, 2 + r() * 3, 0, 7); c.fill(); }
+    }
+    // bibir atas bergelombang
+    c.fillStyle = hex(th.top); c.fillRect(0, 0, 128, 14);
+    for (let x = 0; x < 128; x += 16) { c.beginPath(); c.arc(x + 8, 14, 8, 0, Math.PI); c.fill(); }
+  });
+  return texCache[k];
+}
+
 // tekstur ubin buatan (kotak-kotak ala mainan) + tema platform
 const texCache = {};
 function tileTex(key, base, alt, line, dots) {
@@ -60,13 +93,13 @@ function tileTex(key, base, alt, line, dots) {
 }
 const THEMES = {
   grass: { tex: ['grass', '#6ccb5c', '#7ddc6b', null, '#58b54b'], top: 0x74d463, side: 0xa77b52 },
-  marble: { tex: ['marble', '#efe6d4', '#f8f2e6', '#d8c9a8', null], top: 0xf1eadb, side: 0xdccfb6 },
+  marble: { tex: ['marble', '#efe6d4', '#f8f2e6', '#d8c9a8', null], top: 0xf1eadb, side: 0xdccfb6, brick: true },
   sand: { tex: ['sand', '#f0d590', '#f6e0a6', null, '#dcbb6c'], top: 0xf0d590, side: 0xc9a25c },
   coral: { tex: ['coral', '#ff9f8a', '#ffb3a0', '#f07f6c', null], top: 0xffa692, side: 0xd96f6f },
-  basalt: { tex: ['basalt', '#4a3f46', '#584b52', '#2c2429', '#6d3a2c'], top: 0x514449, side: 0x2e262b },
+  basalt: { tex: ['basalt', '#4a3f46', '#584b52', '#2c2429', '#6d3a2c'], top: 0x514449, side: 0x2e262b, brick: true },
   wood: { tex: ['wood', '#a8743f', '#b98248', '#8a5a2b', '#96652f'], top: 0xb07a44, side: 0x7a4e26 },
-  ice: { tex: ['ice', '#cfeeff', '#e6f7ff', '#a9dcf5', '#ffffff'], top: 0xd8f1ff, side: 0x8ec9ea },
-  styx: { tex: ['styx', '#4b3a78', '#5a4690', '#2d2250', '#7de3b0'], top: 0x52408a, side: 0x2d2250 },
+  ice: { tex: ['ice', '#cfeeff', '#e6f7ff', '#a9dcf5', '#ffffff'], top: 0xd8f1ff, side: 0x8ec9ea, brick: true },
+  styx: { tex: ['styx', '#4b3a78', '#5a4690', '#2d2250', '#7de3b0'], top: 0x52408a, side: 0x2d2250, brick: true },
 };
 function themeMats(theme, w, d) {
   const th = THEMES[theme], base = tileTex(...th.tex);
@@ -76,8 +109,15 @@ function themeMats(theme, w, d) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(w / 8, d / 8); t.anisotropy = 4; t.needsUpdate = true;
     top = lam(0xffffff, { map: t });
   } else top = lam(th.top);
-  const side = lam(th.side);
-  return [side, side, top, side, side, side];
+  const sb = sideTex(theme, th);
+  const sideMat = len => {
+    if (!sb) return lam(th.side);
+    const t = sb.clone();
+    t.wrapS = THREE.RepeatWrapping; t.repeat.set(Math.max(1, Math.round(len / 4)), 1); t.needsUpdate = true;
+    return lam(0xffffff, { map: t });
+  };
+  const sx = sideMat(d), sz = sideMat(w);
+  return [sx, sx, top, lam(th.side), sz, sz];
 }
 
 function put(parent, name, x, y, z, sx = 1, sy = sx, sz = sx, color, rotY = 0) {
@@ -114,6 +154,18 @@ class Level {
       r.rotation.x = Math.PI;
       r.scale.set(w / s, 1, d / s);
       }
+    }
+    // rumput & bunga kecil di pulau rumput yang luas
+    if (HAS_DOM && !rise && opt.theme === 'grass' && w * d >= 30) {
+      const r = rng(Math.floor(x * 31 + z * 17 + w * 7) + 3), n = Math.min(80, Math.floor(w * d / 4)), M4 = new THREE.Matrix4(), col = new THREE.Color();
+      const tuft = new THREE.InstancedMesh(new THREE.ConeGeometry(0.07, 0.24, 4), lam(0x58bb4c), n);
+      const flo = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 6, 5), lam(0xffffff), Math.ceil(n / 3));
+      for (let i = 0; i < n; i++) {
+        const px = (r() - 0.5) * (w - 1), pz = (r() - 0.5) * (d - 1), sc = 0.6 + r() * 0.7;
+        M4.makeScale(sc, sc, sc).setPosition(px, h / 2 + 0.15 * sc, pz); tuft.setMatrixAt(i, M4);
+        if (i % 3 === 0) { M4.makeScale(1, 0.6, 1).setPosition(px + 0.3, h / 2 + 0.07, pz + 0.2); flo.setMatrixAt(i / 3, M4); flo.setColorAt(i / 3, col.set([0xffffff, 0xffe14d, 0xff9ac1, 0xc9a6ff][(i / 3) % 4])); }
+      }
+      m.add(tuft, flo);
     }
     const P = { x, y, z, w, d, h, rise, mesh: m, dx: 0, dy: 0, dz: 0, off: false, x0: x, y0: y, z0: z };
     this.plats.push(P);
@@ -422,7 +474,7 @@ function galaxy(seed) {
     const col = [0x7de3ff, 0xc08bff, 0xff8ad6][i % 3];
     put(g, 'boulder', Math.cos(a) * r, y, Math.sin(a) * r, sc, sc * 0.7, sc, 0x4a3a8a, a);
     const cr = put(g, 'crystal', Math.cos(a) * r, y + sc * 0.4, Math.sin(a) * r, sc * 0.6, sc * 0.6, sc * 0.6, col, a * 2);
-    if (cr) cr.traverse(n => { if (n.isMesh) { n.material.emissive = new THREE.Color(col).multiplyScalar(0.45); n.material.flatShading = true; } });
+    if (cr) { cr.traverse(n => { if (n.isMesh) { n.material.emissive = new THREE.Color(col).multiplyScalar(0.45); n.material.flatShading = true; } }); glow(g, Math.cos(a) * r, y + sc * 1.4, Math.sin(a) * r, col, sc * 5); }
   }
   const dt = canvasTex(256, 256, (c) => {
     const gr = c.createRadialGradient(128, 128, 4, 128, 128, 128);
@@ -467,6 +519,7 @@ function olympus(seed) {
     const a = (i / 8) * Math.PI * 2;
     mesh(new THREE.ConeGeometry(0.14, 0.45, 5), lam(0x8ee06a, { emissive: 0x2a6a10 }), Math.cos(a) * 0.8, 0.25, Math.sin(a) * 0.8, crown);
   }
+  glow(crown, 0, 0.1, 0, 0xffe07a, 5);
   g.add(crown);
   L.crown = crown;
   L.updaters.push(t => { crown.rotation.y = t * 2; if (!L.crownTaken) crown.position.y = 18.9 + Math.sin(t * 3) * 0.15; });
@@ -492,6 +545,7 @@ function olympus(seed) {
 // bantalan lontar: injak untuk terlempar tinggi
 function pad(L, x, y, z, hw, power) {
   const m = mesh(new THREE.CylinderGeometry(1, 1.1, 0.3, 20), lam(0xff5fa2, { emissive: 0x7a1040 }), x, y + 0.12, z, L.group);
+  glow(L.group, x, y + 0.6, z, 0xff5fa2, 3 + hw);
   m.scale.set(hw, 1, 1.3);
   const top = mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.08, 20), lam(0xffffff, { emissive: 0x888888 }), 0, 0.2, 0, m);
   let squash = 0;
@@ -552,6 +606,7 @@ function sea(L, y, color, emissive, size = 700) {
 function arch(g, z, y, half, color, rainbow) {
   for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(0.7, 0.8, 7, 12), lam(color), s * half, y + 3.5, z, g);
   mesh(new RoundedBoxGeometry(half * 2 + 1.6, 1, 1.2, 2, 0.2), lam(color), 0, y + 7.5, z, g);
+  glow(g, 0, y + 4, z, 0xffffff, half * 2.2);
   mesh(new THREE.BoxGeometry(half * 2 - 1, 0.06, 1.4), rainbow ? rainbowMat() : lam(0xffffff, { emissive: 0x555555 }), 0, y + 0.04, z, g);
 }
 
@@ -641,6 +696,7 @@ function hades(seed) {
   for (const [x, z] of [[-12.5, -12.5], [12.5, -12.5], [-12.5, 12.5], [12.5, 12.5]]) {
     mesh(new THREE.CylinderGeometry(0.8, 1, 9, 10), lam(0x2d2250), x, 2, z, g);
     mesh(new THREE.ConeGeometry(0.7, 1.8, 8), lam(0x7dffc0, { emissive: 0x39d9a0 }), x, 7.6, z, g);
+    glow(g, x, 7.8, z, 0x7dffc0, 6);
   }
   for (let i = 0; i < 14; i++) {
     const a = (i / 14) * Math.PI * 2, r = 19 + rnd() * 10, sc = 1.5 + rnd() * 2;
@@ -678,6 +734,7 @@ function garden(seed) {
     mesh(new THREE.SphereGeometry(0.42, 14, 12), appleMat, 0, 0, 0, a).scale.y = 0.92;
     mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.25, 6), lam(0x7a5230), 0, 0.42, 0, a);
     mesh(new THREE.SphereGeometry(0.14, 8, 6), leafMat, 0.14, 0.5, 0, a).scale.set(1.4, 0.4, 0.8);
+    glow(a, 0, 0, 0, 0xffd23a, 2.6);
     a.position.set(s.x, 1, s.z);
     g.add(a);
     return a;
@@ -722,6 +779,7 @@ function yggdrasil(seed) {
   crown.position.set(0, 11.9, 81);
   mesh(new THREE.TorusGeometry(0.8, 0.14, 8, 24), lam(GOLD, { emissive: 0xb07a00 }), 0, 0, 0, crown).rotation.x = Math.PI / 2;
   for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; mesh(new THREE.ConeGeometry(0.14, 0.45, 5), lam(0x8ee06a, { emissive: 0x2a6a10 }), Math.cos(a) * 0.8, 0.25, Math.sin(a) * 0.8, crown); }
+  glow(crown, 0, 0.1, 0, 0xffe07a, 5);
   g.add(crown); L.crown = crown;
   L.updaters.push(t => { crown.rotation.y = t * 2; if (!L.crownTaken) crown.position.y = 11.9 + Math.sin(t * 3) * 0.15; });
   L.cps = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 3, z: 31.5 }, { x: 0, y: 8, z: 46 }];

@@ -91,7 +91,7 @@ function setSky(cols, fog) {
   const dark = top.r + top.g + top.b < 0.5;
   sunSprite.visible = !dark;
   sunSprite.material.color.copy(mid).lerp(new THREE.Color(0xffffff), 0.6);
-  const f = fog || [90, 380];
+  const f = fog || [150, 560];
   scene.fog = new THREE.Fog(cols[2], f[0], f[1]);
 }
 
@@ -162,29 +162,74 @@ const SFX = {
 };
 
 // ------------------------------------------------------------ partikel
-const parts = [], pGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+function softTex(draw) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  draw(c.getContext('2d'));
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softTex(x => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,0.75)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
+const sqTex = softTex(x => { x.fillStyle = '#fff'; x.beginPath(); x.roundRect ? x.roundRect(10, 16, 44, 32, 6) : x.rect(10, 16, 44, 32); x.fill(); });
+// partikel: titik lembut (debu, percikan) dan kertas konfeti
+const parts = [];
 function burst(pos, colors, n = 10, sp = 5) {
+  const confetti = colors === CONFETTI;
   for (let i = 0; i < n; i++) {
     let p = parts.find(q => q.life <= 0);
     if (!p) {
-      if (parts.length > 160) return;
-      p = { m: new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial()), v: new THREE.Vector3(), life: 0 };
+      if (parts.length > 170) return;
+      p = { m: new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false })), v: new THREE.Vector3(), life: 0, max: 1, size: 1, spin: 0 };
       scene.add(p.m); parts.push(p);
     }
-    p.m.material.color.set(colors[i % colors.length]);
+    const mt = p.m.material;
+    mt.map = confetti ? sqTex : dotTex; mt.color.set(colors[i % colors.length]); mt.opacity = 1; mt.needsUpdate = true;
     p.m.position.copy(pos); p.m.position.y += 0.4;
     p.v.set((Math.random() - 0.5) * sp, Math.random() * sp, (Math.random() - 0.5) * sp);
-    p.life = 0.5 + Math.random() * 0.6; p.m.visible = true;
+    p.max = p.life = (confetti ? 0.9 : 0.45) + Math.random() * 0.6;
+    p.size = confetti ? 0.3 + Math.random() * 0.15 : 0.35 + Math.random() * 0.3;
+    p.spin = confetti ? (Math.random() - 0.5) * 14 : 0; p.grav = confetti ? 5 : 9;
+    p.m.visible = true;
   }
 }
 function tickParts(dt) {
   for (const p of parts) {
     if (p.life <= 0) continue;
-    p.life -= dt; p.v.y -= 12 * dt;
+    p.life -= dt; p.v.y -= p.grav * dt;
+    if (p.spin) { p.v.x *= 1 - 1.5 * dt; p.v.z *= 1 - 1.5 * dt; p.m.material.rotation += p.spin * dt; }
     p.m.position.addScaledVector(p.v, dt);
-    p.m.rotation.x += dt * 8; p.m.rotation.y += dt * 6;
+    const k = Math.max(0, p.life / p.max), sc = p.size * (p.spin ? 1 : 0.4 + 0.6 * k);
+    p.m.scale.set(sc * (p.spin ? 0.6 + 0.4 * Math.abs(Math.sin(p.life * 9)) : 1), sc, 1);
+    p.m.material.opacity = Math.min(1, k * 2.2);
     if (p.life <= 0) p.m.visible = false;
   }
+}
+// partikel suasana per map (serbuk emas, bara, salju, daun, gelembung)
+const AMB_N = 240, ambPos = new Float32Array(AMB_N * 3), amb = { vy: 0.5, sway: 0.6, on: false };
+for (let i = 0; i < AMB_N; i++) ambPos.set([(Math.random() - 0.5) * 60, (Math.random() - 0.5) * 28, (Math.random() - 0.5) * 60], i * 3);
+const ambGeo = new THREE.BufferGeometry();
+ambGeo.setAttribute('position', new THREE.BufferAttribute(ambPos, 3));
+const ambPts = new THREE.Points(ambGeo, new THREE.PointsMaterial({ map: dotTex, size: 0.32, transparent: true, opacity: 0.85, depthWrite: false, sizeAttenuation: true }));
+ambPts.frustumCulled = false; ambPts.visible = false; scene.add(ambPts);
+const AMBIENT = {
+  0: [0xfff2b0, 0.6, 0.3], 2: [0xffe9a8, 0.7, 0.3], 3: [0xffffff, 1.3, 0.24], 4: [0xff8a2b, 2.4, 0.3], 5: [0x7dffc0, 1.1, 0.3],
+  6: [0xfff2b0, 0.5, 0.3], 7: [0x8ee06a, -1.1, 0.42], 8: [0xffffff, -2.4, 0.3], plaza: [0xfff2b0, 0.5, 0.3],
+};
+function setAmbient(key) {
+  const a = AMBIENT[key];
+  ambPts.visible = amb.on = !!a;
+  if (a) { ambPts.material.color.set(a[0]); amb.vy = a[1]; ambPts.material.size = a[2]; }
+}
+function tickAmbient(dt, t) {
+  if (!amb.on) return;
+  const c = camera.position;
+  for (let i = 0; i < AMB_N; i++) {
+    const o = i * 3;
+    ambPos[o] += Math.sin(t * 0.7 + i) * amb.sway * dt; ambPos[o + 1] += amb.vy * dt * (0.6 + (i % 5) * 0.2); ambPos[o + 2] += Math.cos(t * 0.5 + i * 1.3) * amb.sway * dt;
+    // bungkus dalam kotak di sekitar kamera
+    if (ambPos[o] - c.x > 30) ambPos[o] -= 60; else if (ambPos[o] - c.x < -30) ambPos[o] += 60;
+    if (ambPos[o + 1] - c.y > 14) ambPos[o + 1] -= 28; else if (ambPos[o + 1] - c.y < -14) ambPos[o + 1] += 28;
+    if (ambPos[o + 2] - c.z > 30) ambPos[o + 2] -= 60; else if (ambPos[o + 2] - c.z < -30) ambPos[o + 2] += 60;
+  }
+  ambGeo.attributes.position.needsUpdate = true;
 }
 // cincin kejut kekuatan dewa
 const rings = [], ringGeo = new THREE.RingGeometry(0.82, 1, 40);
@@ -269,7 +314,7 @@ function buildPreview() {
   sun.target.position.set(0, 0, 0); sun.position.copy(SUN_OFF);
 }
 function enterMenuScene() {
-  preview.visible = true;
+  preview.visible = true; setAmbient('plaza');
   setSky(['#3a7bd5', '#9fd3ff', '#ffe9c9']);
   buildPreview();
 }
@@ -492,7 +537,7 @@ function startRound(m) {
   const n = m.contenders.length;
   m.contenders.forEach((id, i) => addEnt(id, i, n));
   G.round = m; G.roundOver = false; G.fin = 0; G.alive = n; G.lastCount = 99; G.apples = 0;
-  music.setMood(lv);
+  music.setMood(lv); setAmbient(lv);
   G.phase = 'play';
   cam.yaw = 0; cam.pitch = 0.42; cam.init = false;
   startRoundUI(m, lv, n);
@@ -535,7 +580,7 @@ function enterLobbyScene() {
   G.round = { lobby: true, type: 'lobby', startAt: serverNow() - 60000, contenders: [], limit: 0, Q: 0, idx: -1 };
   G.lastCount = 0; G.roundOver = false;
   cam.yaw = 0; cam.pitch = 0.42; cam.init = false;
-  music.setMood(-1);
+  music.setMood(-1); setAmbient('plaza');
   syncLobbyEnts();
   $('touch').classList.toggle('hidden', !IS_TOUCH);
 }
@@ -703,7 +748,15 @@ function tickGame(dt, now) {
     const sx = 1 / Math.sqrt(e.sq);
     e.model.scale.set(sx, e.sq, sx);
     if (e.anim === 1 && (e.dustT = (e.dustT || 0) + dt) > 0.16) { e.dustT = 0; burst(e.pos, [0xffffff], 1, 1.2); }
-    animateGod(e.model, e.anim, tt + e.pos.x * 0.1);
+    // data gerak untuk animasi (pemain lain: diperkirakan dari perubahan posisi)
+    const ax = e.ax || (e.ax = { x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, vy: 0, speed: 0, turn: 0 });
+    const inv = 1 / Math.max(dt, 0.001), ka = Math.min(1, dt * 12);
+    const dyaw = ((e.yaw - ax.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+    ax.vy += ((e.local ? e.vel.y : (e.pos.y - ax.y) * inv) - ax.vy) * ka;
+    ax.speed += ((e.local ? Math.hypot(e.vel.x, e.vel.z) : Math.hypot(e.pos.x - ax.x, e.pos.z - ax.z) * inv) - ax.speed) * ka;
+    ax.turn += (dyaw * inv - ax.turn) * ka;
+    ax.x = e.pos.x; ax.y = e.pos.y; ax.z = e.pos.z; ax.yaw = e.yaw;
+    animateGod(e.model, e.anim, tt, ax);
     const gy = L.groundAt(e.pos.x, e.pos.z, e.pos.y + 0.6);
     e.shadow.visible = gy > -1e8 && !sun.castShadow;
     if (e.shadow.visible) { e.shadow.position.set(e.pos.x, gy + 0.04, e.pos.z); e.shadow.scale.setScalar(Math.max(0.4, 1 - (e.pos.y - gy) * 0.08)); }
@@ -808,7 +861,7 @@ function frame(now) {
   const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
   last = now;
   if ((G.phase === 'play' || G.phase === 'lobby') && G.L && G.round) tickGame(dt, now); else tickMenu(dt, now);
-  tickParts(dt); tickRings(dt);
+  tickParts(dt); tickRings(dt); tickAmbient(dt, now / 1000);
   dome.position.copy(camera.position);
   sunSprite.position.copy(camera.position).addScaledVector(SUN_DIR, 440);
   renderer.render(scene, camera);

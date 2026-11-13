@@ -127,8 +127,8 @@ function makePrimitive(def) {
 }
 
 // anim: 0 diam, 1 lari, 2 lompat, 3 terjang, 4 terpental
-export function animateGod(g, anim, t) {
-  if (g.userData.bones) return animateRig(g, anim, t);
+export function animateGod(g, anim, t, extra) {
+  if (g.userData.bones) return animateRig(g, anim, t, extra);
   const u = g.userData, s = Math.sin(t * 14), c = Math.cos(t * 14);
   let rx = 0, rz = 0, by = 0, fl = 0, fr = 0, hl = 0, hr = 0, hy = 0.72;
   if (anim === 1) { fl = s * 0.3; fr = -s * 0.3; hl = -s * 0.3; hr = s * 0.3; by = Math.abs(c) * 0.08; rx = 0.14; }
@@ -182,6 +182,17 @@ function gradMap() {
   }
   return _grad;
 }
+// cahaya tepi lembut supaya karakter "lepas" dari latar
+function rim(mat, amount = 0.3) {
+  mat.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>',
+      `float rimF = pow( 1.0 - clamp( dot( normalize( vViewPosition ), normal ), 0.0, 1.0 ), 2.6 );
+       gl_FragColor.rgb += vec3( 1.0, 0.96, 0.85 ) * rimF * ${amount.toFixed(2)};
+       #include <dithering_fragment>`);
+  };
+  mat.customProgramCacheKey = () => 'rim' + amount;
+  return mat;
+}
 const outlineMat = new THREE.MeshBasicMaterial({ color: 0x2a1e4a, side: THREE.BackSide });
 outlineMat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize( normal ) * 0.026;'); };
 
@@ -190,7 +201,7 @@ function makeRigged(def) {
   g.add(rig);
   const inst = skClone(TPL.scene), bones = {};
   rig.add(inst);
-  const bodyMat = new THREE.MeshToonMaterial({ map: palette(def), gradientMap: gradMap() });
+  const bodyMat = rim(new THREE.MeshToonMaterial({ map: palette(def), gradientMap: gradMap() }));
   let skinned = null;
   inst.traverse(o => {
     if (o.isBone) bones[o.name] = o;
@@ -222,14 +233,15 @@ function makeRigged(def) {
   headAnchor.add(face, head);
   // rambut & janggut ikal dari Blender (kalau aset sudah dimuat)
   const tint = o => { o.traverse(n => { if (n.isMesh) { n.material = hairToon; n.castShadow = true; } }); return o; };
-  const hairToon = new THREE.MeshToonMaterial({ color: def.hair, gradientMap: gradMap() });
+  const hairToon = rim(new THREE.MeshToonMaterial({ color: def.hair, gradientMap: gradMap() }), 0.22);
   const hairP = def.head !== 'helmet' && def.head !== 'flame' ? prop('hair') : null;
   const beardP = def.beard ? prop('beard') : null;
   if (hairP) { tint(hairP); hairP.position.y = 1.3; hairP.scale.setScalar(0.92); headAnchor.add(hairP); head.position.y = 1.37; head.scale.setScalar(1.08); }
   if (beardP) { tint(beardP); beardP.position.set(0, 1.3, 0.01); headAnchor.add(beardP); }
   const eyeGeo = new THREE.SphereGeometry(0.075, 12, 10);
   const shine = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const eye = x => { const e = add(eyeGeo, dark, x, 0.04, 0.395, face); e.scale.set(1, 1.5, 0.6); e.castShadow = false; add(new THREE.SphereGeometry(0.022, 6, 6), shine, x + 0.025, 0.09, 0.44, face).castShadow = false; return e; };
+  const eyes = [], shines = [];
+  const eye = x => { const e = add(eyeGeo, dark, x, 0.04, 0.395, face); e.scale.set(1, 1.5, 0.6); e.castShadow = false; eyes.push(e); const h = add(new THREE.SphereGeometry(0.022, 6, 6), shine, x + 0.025, 0.09, 0.44, face); h.castShadow = false; shines.push(h); return e; };
   eye(-0.16);
   if (def.patch) {
     add(new THREE.BoxGeometry(0.21, 0.18, 0.05), M(0x1a1a1a), 0.16, 0.05, 0.41, face);
@@ -284,7 +296,8 @@ function makeRigged(def) {
       }
     }
   }
-  g.userData = { rig, bones, st: { ll: 0, lr: 0, al: 0, ar: 0, az: 0, hx: 0, bx: 0 } };
+  g.userData = { rig, bones, eyes, shines, smile, seed: Math.random() * 10, phase: 0, lastT: 0,
+    st: { ll: 0, lr: 0, al: 0, ar: 0, azl: 0, azr: 0, hx: 0, hy: 0, bx: 0, by: 0, eye: 1.5, spin: 0 } };
   return g;
 }
 
@@ -303,25 +316,62 @@ function pose(u, name, x, y, z) {
   b.quaternion.copy(r.Pi).multiply(_d).multiply(r.P).multiply(r.L);
 }
 
-function animateRig(g, anim, t) {
-  const u = g.userData, st = u.st, s = Math.sin(t * 14), c = Math.cos(t * 14);
-  let rx = 0, rz = 0, by = 0, ll = 0, lr = 0, al = 0, ar = 0, az = 0.05 + Math.sin(t * 3) * 0.04, hx = 0, bx = 0;
-  if (anim === 1) { ll = s * 0.95; lr = -s * 0.95; al = -s * 1.0; ar = s * 1.0; by = Math.abs(c) * 0.07; bx = 0.2; hx = -0.1; rz = s * 0.05; }
-  else if (anim === 2) { az = 1.25; ll = 0.45; lr = -0.35; hx = -0.15; }
-  else if (anim === 3) { rx = 1.35; by = 0.3; az = 1.5; al = ar = -0.6; ll = lr = 0.3; }
-  else if (anim === 4) { rx = -1.25; rz = Math.sin(t * 22) * 0.35; by = 0.38; ll = s * 0.7; lr = -s * 0.7; az = 1.0 + c * 0.4; al = s; ar = -s; }
-  else if (anim === 5) { az = 1.75 + Math.sin(t * 16) * 0.3; by = Math.abs(Math.sin(t * 8)) * 0.3; ll = 0.25; lr = -0.25; hx = -0.2; rz = Math.sin(t * 8) * 0.08; }
-  const k = 0.3;
-  st.ll += (ll - st.ll) * k; st.lr += (lr - st.lr) * k; st.al += (al - st.al) * k; st.ar += (ar - st.ar) * k;
-  st.az += (az - st.az) * k; st.hx += (hx - st.hx) * k; st.bx += (bx - st.bx) * k;
+// extra (opsional): { vy: kecepatan vertikal, speed: kecepatan mendatar, turn: laju belok (rad/detik) }
+function animateRig(g, anim, t, extra) {
+  const u = g.userData, st = u.st, x = extra || {};
+  const dt = Math.min(0.05, Math.max(0, t - u.lastT)) || 0.016; u.lastT = t;
+  const speed = x.speed ?? 8, vy = x.vy ?? 0, turn = x.turn ?? 0, sd = u.seed;
+  // langkah kaki mengikuti kecepatan sebenarnya
+  u.phase += dt * (5 + speed * 1.05);
+  const p = u.phase, s = Math.sin(p), c = Math.cos(p);
+  let rx = 0, rz = 0, by = 0, ll = 0, lr = 0, al = 0, ar = 0, azl = 0.06, azr = 0.06, hx = 0, hy = 0, bx = 0, bT = 0, eye = 1.5, spin = 0, sy = 1;
+
+  if (anim === 1) { // lari: ayunan penuh, badan memelintir, kepala tetap stabil
+    const amp = Math.min(1.15, 0.45 + speed * 0.09);
+    ll = s * amp; lr = -s * amp;
+    al = -s * amp * 1.15; ar = s * amp * 1.15;
+    azl = 0.28 + Math.max(0, s) * 0.2; azr = 0.28 + Math.max(0, -s) * 0.2;
+    by = Math.abs(c) * 0.1; bx = 0.16 + speed * 0.012; bT = s * 0.2; hy = -s * 0.14; hx = -0.1 + Math.abs(c) * 0.05;
+    rz = Math.max(-0.3, Math.min(0.3, -turn * 0.06));
+  } else if (anim === 2) { // di udara: naik = meregang, turun = mengepak & kaki menekuk
+    if (vy > 1) { azl = azr = 1.45; al = ar = -0.25; ll = 0.35; lr = 0.15; hx = -0.25; rx = -0.08; sy = 1.04; }
+    else { const f = Math.sin(t * 20 + sd) * 0.28; azl = 1.0 + f; azr = 1.0 - f; ll = -0.55; lr = -0.3; hx = 0.18; rx = Math.min(0.3, -vy * 0.012); eye = 1.75; }
+  } else if (anim === 3) { // terjang: gaya terbang
+    rx = 1.38; by = 0.3; al = ar = -1.5; azl = azr = 0.3; ll = 0.25 + Math.sin(t * 24) * 0.25; lr = 0.25 - Math.sin(t * 24) * 0.25; hx = -0.5; eye = 1.1;
+  } else if (anim === 4) { // terpental: jungkir balik sambil menggelepar
+    rx = -1.2; by = 0.4; spin = 1; rz = Math.sin(t * 19 + sd) * 0.4;
+    ll = Math.sin(t * 23) * 0.8; lr = -Math.sin(t * 23 + 1) * 0.8; al = Math.sin(t * 21) * 1.1; ar = -Math.sin(t * 21 + 2) * 1.1; azl = azr = 1.1; eye = 0.35;
+  } else if (anim === 5) { // sorak: lompat-lompat, tangan melambai
+    const h = Math.abs(Math.sin(t * 8));
+    azl = 1.7 + Math.sin(t * 16) * 0.32; azr = 1.7 - Math.sin(t * 16) * 0.32; by = h * 0.34; ll = 0.3 * h; lr = -0.3 * h; hx = -0.22; rz = Math.sin(t * 8) * 0.1; eye = 0.7; sy = 1 + h * 0.05;
+  } else { // diam: bernapas, menoleh, memindah tumpuan
+    const br = Math.sin(t * 2.2 + sd);
+    sy = 1 + br * 0.018; by = 0; azl = azr = 0.1 + br * 0.05;
+    hy = Math.sin(t * 0.6 + sd) * 0.32; hx = Math.sin(t * 0.9 + sd * 2) * 0.06;
+    rz = Math.sin(t * 0.8 + sd) * 0.03; al = Math.sin(t * 1.1 + sd) * 0.06; ar = -al;
+  }
+  // kedip
+  const bl = (t * 0.37 + sd) % 1;
+  if (bl > 0.955 && anim !== 4) eye = 0.12;
+
+  const k = Math.min(1, dt * 16), kf = Math.min(1, dt * 22);
+  st.ll += (ll - st.ll) * kf; st.lr += (lr - st.lr) * kf; st.al += (al - st.al) * kf; st.ar += (ar - st.ar) * kf;
+  st.azl += (azl - st.azl) * k; st.azr += (azr - st.azr) * k; st.hx += (hx - st.hx) * k; st.hy += (hy - st.hy) * k;
+  st.bx += (bx - st.bx) * k; st.by += (bT - st.by) * k; st.eye += (eye - st.eye) * Math.min(1, dt * 30);
   const r = u.rig;
-  r.rotation.x += (rx - r.rotation.x) * 0.25;
-  r.rotation.z += (rz - r.rotation.z) * 0.25;
-  r.position.y += (by - r.position.y) * 0.4;
-  pose(u, 'body', st.bx, 0, 0);
-  pose(u, 'head', st.hx, 0, 0);
+  r.rotation.x += (rx - r.rotation.x) * k;
+  r.rotation.z += (rz - r.rotation.z) * k;
+  if (spin) { st.spin += dt * 11; r.rotation.y = st.spin; }
+  else { st.spin = 0; const w = ((r.rotation.y + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; r.rotation.y = w * (1 - k); }
+  r.position.y += (by - r.position.y) * Math.min(1, dt * 24);
+  r.scale.y += (sy - r.scale.y) * k;
+  pose(u, 'body', st.bx, st.by, 0);
+  pose(u, 'head', st.hx, st.hy - st.by * 0.7, 0);
   pose(u, 'legL', st.ll, 0, 0);
   pose(u, 'legR', st.lr, 0, 0);
-  pose(u, 'armL', st.al, 0, st.az);
-  pose(u, 'armR', st.ar, 0, -st.az);
+  pose(u, 'armL', st.al, 0, st.azl);
+  pose(u, 'armR', st.ar, 0, -st.azr);
+  for (const e of u.eyes) e.scale.y = st.eye;
+  const sh = st.eye > 0.6;
+  for (const h of u.shines) h.visible = sh;
 }
