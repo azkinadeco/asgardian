@@ -37,7 +37,7 @@ const SUN_OFF = new THREE.Vector3(-28, 52, 16);
 const quality = { acc: 0, n: 0, level: 3, mode: 'auto', scale: 1, cool: 0, hold: 5, slow: 0, futile: 0, lastAvg: 0, floorMin: 0, wait: 3 };
 const BASE_DPR = Math.min(window.devicePixelRatio || 1, 1.5);
 renderer.setPixelRatio(BASE_DPR);
-renderer.shadowMap.autoUpdate = false; // bayangan diperbarui tiap 2-3 frame (lihat frame())
+renderer.shadowMap.autoUpdate = false; // diatur sendiri di frame()
 // level (fitur): 3 = bayangan + resolusi penuh, 2 = bayangan + resolusi 1x, 1 = tanpa bayangan, 0 = tanpa bayangan + resolusi rendah
 // scale (resolusi adaptif): diturunkan/dinaikkan pelan-pelan mengikuti fps, supaya efek tetap menyala
 // dan yang dikorbankan lebih dulu hanyalah ketajaman
@@ -1434,9 +1434,9 @@ function tickGame(dt, now) {
       const ready = me.abCd <= 0;
       ap.textContent = `⚡ ${ab.name}` + (ready ? (IS_TOUCH ? '' : ' [Q]') : ` ${Math.ceil(me.abCd)}s`);
       ap.classList.toggle('ready', ready); $('btnAb').classList.toggle('cd', !ready);
-      $('btnAb').textContent = ready ? ab.name.split(' ')[0].toUpperCase() : Math.ceil(me.abCd) + 's';
+      const cdTxt = ready ? '' : String(Math.ceil(me.abCd)); if (cdTxt !== G.abCdTxt) $('abCd').textContent = G.abCdTxt = cdTxt;
       const pc = Math.round((1 - Math.max(0, me.abCd) / AB_CD) * 100);
-      $('btnAb').style.background = ready ? '' : `conic-gradient(rgba(155,92,255,.9) ${pc}%, rgba(40,30,70,.75) 0)`;
+      $('btnAb').style.background = ready ? '' : `conic-gradient(rgba(155,92,255,.55) ${pc}%, rgba(40,30,70,.4) 0)`;
     }
   }
 }
@@ -1455,18 +1455,24 @@ function tickMenu(dt, now) {
   camera.lookAt(wide ? 2.2 : 0, wide ? 0.9 : portrait ? -0.9 : -0.4, 0);
 }
 
-let last = performance.now(), fpsAcc = 0, fpsN = 0;
+let last = performance.now(), fpsAcc = 0, fpsN = 0, dtS = 1 / 60;
 function frame(now) {
   if (testDone) return;
   requestAnimationFrame(frame);
   if (opts.cap30 && now - last < 31) return; // hemat baterai: lewati tiap frame kedua
   frameCount++;
-  renderer.shadowMap.needsUpdate = frameCount % (IS_TOUCH ? 3 : 2) === 0;
+  // bayangan diperbarui tiap frame: kalau hanya tiap 2-3 frame, bayangan karakter tertinggal dan beban frame jadi
+  // tidak rata (satu frame berat, dua ringan) sehingga karakter terlihat patah-patah di mode Tinggi
+  renderer.shadowMap.needsUpdate = sun.castShadow;
   perf.acc += now - last; perf.n++;
   fpsAcc += now - last; fpsN++;
   if (fpsAcc > 500) { if (opts.fps) $('fps').textContent = Math.round(1000 * fpsN / fpsAcc) + ' fps · ' + Math.round(renderer.getPixelRatio() * 100) + '%'; fpsAcc = fpsN = 0; }
-  const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
+  // dt dihaluskan: selisih waktu antarframe yang naik-turun membuat langkah karakter tidak sama panjang (bergetar);
+  // sentakan besar tetap dipakai apa adanya supaya permainan tidak melambat
+  const rawDt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
   last = now;
+  dtS = rawDt > dtS * 1.8 || rawDt < dtS * 0.55 ? rawDt : dtS + (rawDt - dtS) * 0.2;
+  const dt = dtS;
   if ((G.phase === 'play' || G.phase === 'lobby') && G.L && G.round) tickGame(dt, now); else { tickMenu(dt, now); if (now > 4000) tuneQuality(dt); }
   tickParts(dt); tickRings(dt); tickBolts(dt); tickAmbient(dt, now / 1000);
   dome.position.copy(camera.position); skyU.uT.value = now / 1000;
