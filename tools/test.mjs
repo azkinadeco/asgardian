@@ -15,7 +15,7 @@ register('data:text/javascript,' + encodeURIComponent(`export async function res
   return n(s, c);
 }`));
 const S = await import(pathToFileURL(path.join(ROOT, 'public/js/sim.js')).href);
-const { buildLevel, LEVELS } = await import(pathToFileURL(path.join(ROOT, 'public/js/levels.js')).href);
+const { buildLevel, buildPlaza, optimizeLevel, LEVELS } = await import(pathToFileURL(path.join(ROOT, 'public/js/levels.js')).href);
 
 let failed = 0;
 const check = (ok, msg) => { console.log((ok ? '  ok   ' : '  GAGAL ') + msg); if (!ok) failed++; };
@@ -40,6 +40,19 @@ for (let idx = 0; idx < LEVELS.length; idx++) {
   }
   const type = LEVELS[idx].type;
   check(!nan && (type === 'survival' ? dead >= n / 2 : fin >= 2), `${LEVELS[idx].name} (${type}): selesai ${fin}, gugur ${dead}${nan ? ', ADA NaN' : ''}`);
+}
+
+console.log('Penggabungan benda diam (draw call):');
+{
+  const calls = L => { let n = 0; L.group.traverse(o => { if ((o.isMesh || o.isSprite || o.isPoints) && (o.layers.mask & 1)) n += Array.isArray(o.material) ? o.material.length : 1; }); return n; };
+  let worst = 0, bad = '';
+  for (let idx = 0; idx <= LEVELS.length; idx++) {
+    const L = idx < LEVELS.length ? buildLevel(idx, 99) : buildPlaza(), before = calls(L);
+    try { optimizeLevel(L); L.update(5); } catch (e) { bad += ` [map ${idx}: ${e.message}]`; }
+    const after = calls(L); worst = Math.max(worst, after / before);
+    if (after >= before) bad += ` [map ${idx}: ${before} -> ${after}]`;
+  }
+  check(!bad, 'semua map + lobby tergabung tanpa error, draw call turun (terburuk tersisa ' + Math.round(worst * 100) + '%)' + bad);
 }
 
 console.log('Protokol server:');

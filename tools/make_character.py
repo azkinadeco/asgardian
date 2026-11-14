@@ -128,8 +128,24 @@ for v in me.vertices:
     tot = sum(w.values())
     for n, val in w.items():
         if val > 0.001: groups[n].add([v.index], val / tot, 'REPLACE')
-body.parent = rig
-mod = body.modifiers.new('Armature', 'ARMATURE'); mod.object = rig
+# ---------------------------------------------------------------- LOD: salinan poligon rendah
+# dipakai untuk garis tepi, bayangan, dan karakter yang jauh dari kamera (jauh lebih ringan di HP)
+low = body.copy(); low.data = body.data.copy(); low.name = 'BodyLow'; low.data.name = 'BodyLow'
+scene.collection.objects.link(low)
+bpy.ops.object.select_all(action='DESELECT')
+bpy.context.view_layer.objects.active = low; low.select_set(True)
+d2 = low.modifiers.new('dec', 'DECIMATE'); d2.ratio = float(os.environ.get('LOWRATIO', '0.26'))
+bpy.ops.object.modifier_apply(modifier='dec')
+lm = low.data
+uvl = lm.uv_layers[0]
+for p in lm.polygons:
+    p.use_smooth = True
+    u = (part(p.center) + 0.5) / 4.0
+    for li in p.loop_indices: uvl.data[li].uv = (u, 0.5)
+print('LOW polys %d' % len(lm.polygons))
+for o in (body, low):
+    o.parent = rig
+    m2 = o.modifiers.new('Armature', 'ARMATURE'); m2.object = rig
 
 # ---------------------------------------------------------------- ekspor
 bpy.ops.object.select_all(action='SELECT')

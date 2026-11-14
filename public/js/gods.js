@@ -3,6 +3,8 @@ import * as THREE from '/vendor/three.module.js';
 import { GLTFLoader } from '/jsm/loaders/GLTFLoader.js';
 import { clone as skClone } from '/jsm/utils/SkeletonUtils.js';
 import { prop } from './props.js';
+import { mergeGeometries } from '/jsm/utils/BufferGeometryUtils.js';
+import { bakeGeo } from './merge.js';
 
 export const GODS = [
   { id: 'zeus', name: 'Zeus', robe: 0xffffff, trim: 0xf2c14e, skin: 0xffd2a8, hair: 0xf2f2f2, beard: true, head: 'laurel', item: 'bolt' },
@@ -199,6 +201,33 @@ function rim(mat, amount = 0.3) {
 }
 const outlineMat = new THREE.MeshBasicMaterial({ color: 0x2a1e4a, side: THREE.BackSide });
 outlineMat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize( normal ) * 0.026;'); };
+// garis tepi dari badan poligon rendah: sedikit lebih tebal supaya tetap membungkus badan aslinya
+const outlineLowMat = new THREE.MeshBasicMaterial({ color: 0x2a1e4a, side: THREE.BackSide });
+outlineLowMat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize( normal ) * 0.036;'); };
+outlineLowMat.customProgramCacheKey = () => 'outlineLow';
+
+const EYE_MAT = new THREE.MeshPhongMaterial({ color: 0x1a1a1a, shininess: 90 }), SHINE_MAT = new THREE.MeshBasicMaterial({ color: 0xffffff });
+// bahan bersama untuk hiasan gabungan: warna dari vertex color, satu program untuk semua dewa
+let _accMat = null;
+const accMat = () => _accMat || (_accMat = rim(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: gradMap(), side: THREE.DoubleSide }), 0.22));
+const _rel = new THREE.Matrix4(), _inv = new THREE.Matrix4();
+function mergeStatic(base, cast) {
+  base.updateMatrixWorld(true);
+  _inv.copy(base.matrixWorld).invert();
+  const plain = [], glow = new Map(), used = [];
+  base.traverse(o => {
+    if (!o.isMesh || o.isSkinnedMesh || !o.geometry.attributes.normal || !o.material.color) return;
+    for (let p = o; p && p !== base; p = p.parent) if (!p.visible || p.userData.dyn) return;
+    const m = o.material, em = m.emissive && m.emissiveIntensity > 0 ? m.emissive.getHex() : 0;
+    const g = bakeGeo(o.geometry, null, _rel.multiplyMatrices(_inv, o.matrixWorld), m);
+    if (em) { if (!glow.has(em)) glow.set(em, { m, geos: [] }); glow.get(em).geos.push(g); } else plain.push(g);
+    used.push(o);
+  });
+  const put = (geos, mat) => { if (!geos.length) return; const me = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos, false) : geos[0], mat); me.castShadow = cast; me.userData.dyn = true; base.add(me); };
+  put(plain, accMat());
+  for (const { m, geos } of glow.values()) { const c = m.clone(); c.color.set(0xffffff); c.vertexColors = true; put(geos, c); }
+  for (const o of used) o.removeFromParent();
+}
 
 function makeRigged(def) {
   const g = new THREE.Group(), rig = new THREE.Group();
@@ -206,16 +235,21 @@ function makeRigged(def) {
   const inst = skClone(TPL.scene), bones = {};
   rig.add(inst);
   const bodyMat = rim(new THREE.MeshToonMaterial({ map: palette(def), gradientMap: gradMap() }));
-  let skinned = null, outlineRef = null;
+  let skinned = null, low = null, outlineRef = null;
   inst.traverse(o => {
     if (o.isBone) bones[o.name] = o;
-    if (o.isSkinnedMesh) { o.material = bodyMat; o.frustumCulled = false; o.castShadow = true; skinned = o; }
+    if (o.isSkinnedMesh) { o.material = bodyMat; o.frustumCulled = false; if (/low/i.test(o.name)) low = o; else skinned = o; }
   });
+  if (!skinned) { skinned = low; low = null; }
   if (skinned) {
-    const ol = new THREE.SkinnedMesh(skinned.geometry, outlineMat);
-    ol.bind(skinned.skeleton, skinned.bindMatrix);
-    ol.frustumCulled = false;
-    skinned.parent.add(ol);
+    // badan poligon rendah (kalau ada di aset): dipakai garis tepi + bayangan, dan menggantikan badan saat jauh
+    const hull = low || skinned;
+    skinned.castShadow = !low;
+    if (low) { low.visible = false; low.castShadow = false; }
+    const ol = new THREE.SkinnedMesh(hull.geometry, low ? outlineLowMat : outlineMat);
+    ol.bind(hull.skeleton, hull.bindMatrix);
+    ol.frustumCulled = false; ol.castShadow = !!low;
+    hull.parent.add(ol);
     outlineRef = ol;
   }
   // jangkar: anak-anaknya memakai koordinat model (y atas, +z depan) tapi ikut gerak tulang
@@ -227,8 +261,8 @@ function makeRigged(def) {
     return a;
   };
   const M = (c, o) => new THREE.MeshToonMaterial(Object.assign({ color: c, gradientMap: gradMap() }, o || {}));
-  const add = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o; };
-  const hair = M(def.hair), dark = new THREE.MeshPhongMaterial({ color: 0x1a1a1a, shininess: 90 }), gold = M(0xf2c14e);
+  const add = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); parent.add(o); return o; };
+  const hair = M(def.hair), gold = M(0xf2c14e);
 
   const headAnchor = anchor('head');
   const face = new THREE.Group();          // mata, pipi, senyum
@@ -242,17 +276,19 @@ function makeRigged(def) {
   const hairP = def.head !== 'helmet' && def.head !== 'flame' ? prop('hair') : null;
   const beardP = def.beard ? prop('beard') : null;
   if (hairP) { tint(hairP); hairP.position.y = 1.3; hairP.scale.setScalar(0.92); headAnchor.add(hairP); head.position.y = 1.37; head.scale.setScalar(1.08); }
-  if (beardP) { tint(beardP); beardP.position.set(0, 1.3, 0.01); headAnchor.add(beardP); }
-  const eyeGeo = new THREE.SphereGeometry(0.075, 12, 10);
-  const shine = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const eyes = [], shines = [];
-  const eye = x => { const e = add(eyeGeo, dark, x, 0.04, 0.395, face); e.scale.set(1, 1.5, 0.6); e.castShadow = false; eyes.push(e); const h = add(new THREE.SphereGeometry(0.022, 6, 6), shine, x + 0.025, 0.09, 0.44, face); h.castShadow = false; shines.push(h); return e; };
-  eye(-0.16);
+  if (beardP) { tint(beardP); beardP.traverse(n => { n.castShadow = false; }); beardP.position.set(0, 1.3, 0.01); headAnchor.add(beardP); }
+  // kedua mata jadi satu mesh (kedip = skala Y), kedua kilau mata jadi satu mesh
+  const eyeXs = def.patch ? [-0.16] : [-0.16, 0.16];
+  const eyeMesh = add(mergeGeometries(eyeXs.map(x => new THREE.SphereGeometry(0.075, 12, 10).scale(1, 1, 0.6).translate(x, 0, 0))), EYE_MAT, 0, 0.04, 0.395, face);
+  eyeMesh.scale.y = 1.5; eyeMesh.userData.dyn = true;
+  const shineMesh = add(mergeGeometries(eyeXs.map(x => new THREE.SphereGeometry(0.022, 6, 6).translate(x + 0.025, 0, 0))), SHINE_MAT, 0, 0.09, 0.44, face);
+  shineMesh.userData.dyn = true;
+  const eyes = [eyeMesh], shines = [shineMesh];
   if (def.patch) {
     add(new THREE.BoxGeometry(0.21, 0.18, 0.05), M(0x1a1a1a), 0.16, 0.05, 0.41, face);
     const strap = add(new THREE.TorusGeometry(0.452, 0.02, 6, 24), M(0x1a1a1a), 0, 0.08, 0, face);
     strap.rotation.set(Math.PI / 2, -0.15, 0);
-  } else eye(0.16);
+  }
   const cheek = M(0xff9c9c);
   for (const s of [-1, 1]) { const c = add(new THREE.SphereGeometry(0.075, 8, 6), cheek, s * 0.29, -0.1, 0.33, face); c.scale.set(1, 0.6, 0.35); c.castShadow = false; }
   const smile = add(new THREE.TorusGeometry(0.07, 0.016, 6, 12, Math.PI), M(0x7a3b2e), 0, -0.1, 0.435, face);
@@ -266,7 +302,6 @@ function makeRigged(def) {
       if (!n.isMesh) return;
       const nm = n.material.name, c = colors && colors[nm] !== undefined ? colors[nm] : n.material.color;
       n.material = M(c, Object.assign({ side: THREE.DoubleSide }, nm === 'bolt' || nm === 'flame' ? { emissive: c, emissiveIntensity: 0.55 } : null));
-      n.castShadow = true;
     });
     return o;
   };
@@ -303,10 +338,12 @@ function makeRigged(def) {
     add(new THREE.ConeGeometry(0.14, 0.38, 8), fm, -0.2, 0.5, 0, head).rotation.z = 0.4;
   }
 
+  let armAnchor = null;
   if (def.item) {
     const it = new THREE.Group();
     it.position.set(-0.74, 0.6, 0.1);
-    anchor('armR').add(it);
+    armAnchor = anchor('armR');
+    armAnchor.add(it);
     const steel = M(0xb8bec8), wood = M(0x8a5a2b);
     const wp = prop('acc_' + def.item);
     if (wp) { toon(wp); wp.scale.setScalar(0.92); it.add(wp); }
@@ -336,9 +373,22 @@ function makeRigged(def) {
     anchor('body').add(m);
     cape = { geo, base: geo.attributes.position.array.slice(), t: 0 };
   }
-  g.userData = { rig, bones, eyes, shines, smile, outline: outlineRef, cape, seed: Math.random() * 10, phase: 0, lastT: 0,
+  // semua hiasan diam (rambut, janggut, helm, pipi, senjata) digabung jadi satu mesh per jangkar
+  try { mergeStatic(headAnchor, true); if (armAnchor) mergeStatic(armAnchor, false); } catch (e) { console.error('gabung hiasan gagal', e); }
+  g.userData = { rig, bones, eyes, shines, smile, outline: outlineRef, body: skinned, low, face, far: false, cape, seed: Math.random() * 10, phase: 0, lastT: 0,
     st: { ll: 0, lr: 0, al: 0, ar: 0, azl: 0, azr: 0, hx: 0, hy: 0, bx: 0, by: 0, eye: 1.5, spin: 0 } };
   return g;
+}
+
+// LOD: karakter jauh memakai badan poligon rendah tanpa garis tepi dan tanpa detail wajah
+export function setGodLOD(g, far, outline = !far) {
+  const u = g.userData;
+  if (!u.bones) return;
+  if (u.outline && u.outline.visible !== outline) u.outline.visible = outline;
+  if (u.far === far) return;
+  u.far = far;
+  if (u.low) { u.low.visible = far; u.body.visible = !far; }
+  if (u.face) u.face.visible = !far;
 }
 
 export function makeGod(def, skinId) {

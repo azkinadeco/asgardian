@@ -150,11 +150,88 @@
   #power b { color:var(--gold); }
   #abPill.ready { background:rgba(155,92,255,.85); }
   #btnDive { right:calc(max(20px,env(safe-area-inset-right)) + 104px); bottom:max(22px,env(safe-area-inset-bottom)); width:70px; height:70px; background:rgba(90,110,255,.75); font-size:12px; }
+
+  /* ============ tema visual: marmer, emas, dan nila Olympus ============ */
+  :root { --gold:#f2c14e; --gold2:#ffe58a; --gold3:#b9741a; --ink:#2a1e4a; --indigo:#3b2a7a; --panel:#fffaf0; }
+  html,body { font-family:ui-rounded,"SF Pro Rounded","Arial Rounded MT Bold","Nunito","Trebuchet MS","Segoe UI",system-ui,sans-serif; }
+  .panel { background:linear-gradient(180deg,#fffdf6 0%,#f6efdf 100%); border:3px solid var(--gold); border-radius:24px; padding:20px 18px 16px;
+    box-shadow:inset 0 0 0 3px #fff8e1, inset 0 -10px 24px rgba(214,170,70,.12), 0 9px 0 rgba(42,30,74,.3), 0 20px 44px rgba(20,10,50,.35); position:relative; }
+  /* pita meander emas di puncak panel */
+  .panel::before { content:''; display:block; height:10px; margin:-20px -18px 12px; border-radius:20px 20px 0 0;
+    background:repeating-linear-gradient(90deg,var(--gold) 0 10px,#fff3c4 10px 14px,var(--gold) 14px 20px,var(--gold3) 20px 22px); opacity:.95; }
+  h1 { font-size:36px; letter-spacing:3px; background:linear-gradient(100deg,#f2a93b 0%,#ffe58a 30%,#fffbe0 45%,#ffe58a 60%,#f2a93b 100%); background-size:220% 100%;
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; filter:drop-shadow(0 3px 0 #2a1e4a) drop-shadow(0 6px 10px rgba(42,30,74,.25)); animation:shine 5s linear infinite; }
+  @keyframes shine { from { background-position:200% 0; } to { background-position:-20% 0; } }
+  .crest { display:block; width:74px; height:74px; margin:-4px auto 2px; filter:drop-shadow(0 4px 0 rgba(42,30,74,.35)); animation:bob 3.2s ease-in-out infinite; }
+  @keyframes bob { 50% { transform:translateY(-4px); } }
+  .tag { font-size:13px; letter-spacing:.5px; color:var(--indigo); opacity:.8; }
+  label { color:var(--indigo); opacity:.85; }
+  input[type=text] { border:2px solid #dccfae; background:#fffefa; box-shadow:inset 0 2px 5px rgba(42,30,74,.1); border-radius:14px; }
+  input[type=text]:focus { border-color:var(--gold); box-shadow:inset 0 2px 5px rgba(42,30,74,.1), 0 0 0 3px rgba(242,193,78,.35); }
+  .btn { background:linear-gradient(rgba(255,255,255,.55),rgba(255,255,255,0) 46%),linear-gradient(#ffd866,#f2a93b); border:2px solid #fff3c4; border-radius:16px;
+    box-shadow:0 5px 0 var(--gold3), 0 10px 18px rgba(185,116,26,.35); text-shadow:0 1px 0 rgba(255,255,255,.6); font-weight:bold; }
+  .btn:active { box-shadow:0 2px 0 var(--gold3); }
+  .mbtn { position:relative; padding:14px 40px 14px 68px; border-radius:18px; border:2px solid #fff; min-height:68px;
+    background:linear-gradient(rgba(255,255,255,.6),rgba(255,255,255,0) 50%),linear-gradient(#fff3c9,#ffd978); box-shadow:0 5px 0 #d9a93a, 0 10px 18px rgba(120,80,10,.22); }
+  .mbtn::after { content:'›'; position:absolute; right:16px; top:50%; transform:translateY(-54%); font-size:30px; color:var(--ink); opacity:.45; }
+  .mbtn b { font-size:19px; letter-spacing:.3px; } .mbtn span { display:block; margin-top:1px; }
+  .mbtn .ic { position:absolute; left:12px; top:50%; width:44px; height:44px; margin-top:-22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:23px;
+    background:radial-gradient(circle at 35% 30%,#fff,#ffe9a8); box-shadow:inset 0 -3px 0 rgba(0,0,0,.12), 0 0 0 2px var(--gold); opacity:1; }
+  #modeLan { background:linear-gradient(rgba(255,255,255,.6),rgba(255,255,255,0) 50%),linear-gradient(#d9f0ff,#8fcbf5); box-shadow:0 5px 0 #4f96cf, 0 10px 18px rgba(20,70,120,.22); }
+  #modeLan .ic { background:radial-gradient(circle at 35% 30%,#fff,#bfe3ff); box-shadow:inset 0 -3px 0 rgba(0,0,0,.12), 0 0 0 2px #4f96cf; }
+  .mbtn:disabled { background:linear-gradient(#efecf5,#dcd7e8); box-shadow:0 5px 0 #b9b2cc; } .mbtn:disabled::after { content:'🔒'; font-size:16px; opacity:.6; }
+  .mbtn:active { box-shadow:0 2px 0 #d9a93a; } #modeLan:active { box-shadow:0 2px 0 #4f96cf; }
+  .god { background:linear-gradient(#f7f2ff,#e9e2f6); border:2px solid #ded5ee; border-radius:14px; box-shadow:0 3px 0 rgba(42,30,74,.12); padding:6px 2px 5px; }
+  .god.sel { border-color:var(--gold); background:linear-gradient(#fffbe6,#ffe9a8); box-shadow:0 3px 0 var(--gold3), 0 0 14px rgba(242,193,78,.55); transform:translateY(-2px); }
+  .god img { width:40px; height:40px; background:radial-gradient(circle at 50% 35%,#fff,#bfe3ff 60%,#9cc7f0); }
+  #profile, #power, .addr { background:linear-gradient(135deg,#3b2a7a,#2a1e4a); border:1.5px solid rgba(242,193,78,.55); box-shadow:inset 0 1px 0 rgba(255,255,255,.12); border-radius:14px; }
+  #xpBar { height:9px; box-shadow:inset 0 1px 2px rgba(0,0,0,.4); } #xpBar i { border-radius:5px; background:linear-gradient(#fff3c4,#f2a93b); }
+  .plist li { background:linear-gradient(#f7f2ff,#e9e2f6); border:1.5px solid #ded5ee; border-radius:12px; }
+  .plist li.me { background:linear-gradient(#fffbe6,#ffe9a8); border-color:var(--gold); box-shadow:none; }
+  details { background:#f1ebfa; border:1.5px solid #ded5ee; }
+  .step button { background:linear-gradient(#4a3696,#2a1e4a); box-shadow:0 3px 0 #1a1232; border-radius:11px; }
+  #diffBtns button { box-shadow:0 3px 0 rgba(42,30,74,.2); background:#ddd6ee; } #diffBtns button.on { background:linear-gradient(#4a3696,#2a1e4a); box-shadow:0 3px 0 #1a1232; }
+  select { border:2px solid #dccfae; border-radius:10px; padding:5px 8px; background:#fffefa; color:var(--ink); }
+  /* HUD */
+  .pill { background:linear-gradient(180deg,rgba(64,46,128,.86),rgba(34,24,66,.86)); border:1.5px solid rgba(242,193,78,.6); box-shadow:0 3px 0 rgba(20,12,44,.45); text-shadow:0 1px 0 rgba(0,0,0,.5); padding:5px 14px; }
+  #goal { color:var(--gold2); } #timer { font-variant-numeric:tabular-nums; }
+  #abPill.ready { background:linear-gradient(180deg,#b07cff,#7a3fe0); border-color:#e6d4ff; animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow:0 3px 0 rgba(20,12,44,.45), 0 0 14px rgba(176,124,255,.9); } }
+  #big { background:linear-gradient(#fffbe0 10%,#ffd866 45%,#f2a93b 90%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; -webkit-text-stroke:0;
+    text-shadow:none; filter:drop-shadow(0 5px 0 #2a1e4a) drop-shadow(0 0 3px #2a1e4a) drop-shadow(0 10px 16px rgba(20,10,50,.45)); font-weight:bold; letter-spacing:2px; }
+  #card, #end { background:linear-gradient(180deg,rgba(64,46,128,.94),rgba(30,20,62,.94)); border:3px solid var(--gold); border-radius:24px;
+    box-shadow:inset 0 0 0 2px rgba(255,243,196,.25), 0 8px 0 rgba(20,12,44,.5), 0 20px 44px rgba(10,5,30,.5); padding:26px 26px 20px; }
+  #card small, #end small { position:absolute; left:50%; top:-15px; transform:translateX(-50%); white-space:nowrap; opacity:1; color:#4a2c00; font-weight:bold; font-size:12px;
+    background:linear-gradient(#ffe58a,#f2a93b); border:2px solid #fff3c4; border-radius:999px; padding:4px 16px; box-shadow:0 3px 0 var(--gold3); }
+  #card b { font-size:34px; background:linear-gradient(#fffbe0,#ffd866 55%,#f2a93b); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; filter:drop-shadow(0 3px 0 rgba(20,12,44,.7)); letter-spacing:1px; }
+  #end h2 { font-size:28px; text-shadow:0 3px 0 rgba(20,12,44,.7); } #end .names span { background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); border-radius:10px; padding:2px 9px; }
+  #end tr:nth-child(odd) td { background:rgba(255,255,255,.06); } #end td:first-child { border-radius:8px 0 0 8px; } #end td:last-child { border-radius:0 8px 8px 0; }
+  #lead { background:linear-gradient(180deg,rgba(64,46,128,.8),rgba(34,24,66,.8)); border:1.5px solid rgba(242,193,78,.5); border-radius:14px; padding:7px 12px; box-shadow:0 3px 0 rgba(20,12,44,.4); }
+  #feed div { background:linear-gradient(90deg,rgba(64,46,128,.88),rgba(34,24,66,.8)); border-left:3px solid var(--gold); border-radius:4px 12px 12px 4px; padding:5px 11px; box-shadow:0 2px 0 rgba(20,12,44,.35); }
+  #prog { height:12px; background:linear-gradient(180deg,rgba(34,24,66,.85),rgba(64,46,128,.85)); box-shadow:0 0 0 2px var(--gold), 0 3px 0 2px rgba(20,12,44,.4); border-radius:8px; }
+  #muteBtn, #setBtn, #quitBtn { background:linear-gradient(180deg,rgba(64,46,128,.9),rgba(34,24,66,.9)); border:1.5px solid rgba(242,193,78,.6); box-shadow:0 3px 0 rgba(20,12,44,.45); }
+  #settings { background:linear-gradient(180deg,#fffdf6,#f6efdf); border:3px solid var(--gold); box-shadow:0 8px 0 rgba(42,30,74,.3), 0 16px 34px rgba(20,10,50,.35); border-radius:18px; }
+  /* kontrol sentuh */
+  #joy { background:radial-gradient(circle,rgba(255,255,255,.08) 40%,rgba(255,255,255,.26) 100%); border:3px solid rgba(255,255,255,.7); box-shadow:0 0 0 2px rgba(42,30,74,.25), inset 0 0 18px rgba(255,255,255,.25); }
+  #knob { background:radial-gradient(circle at 35% 30%,#fff,#e9e2f6 70%); box-shadow:0 4px 0 rgba(42,30,74,.35); }
+  .tbtn { font-weight:bold; letter-spacing:.5px; text-shadow:0 2px 0 rgba(0,0,0,.35); border:3px solid rgba(255,255,255,.85); box-shadow:0 5px 0 rgba(20,12,44,.4), inset 0 -8px 12px rgba(0,0,0,.18), inset 0 6px 10px rgba(255,255,255,.35); }
+  .tbtn:active { transform:scale(calc(var(--ts,1) * .93)); }
+  #btnJump { background:radial-gradient(circle at 35% 28%,#ffe58a,#f2a93b 60%,#d98a1c); }
+  #btnDive { background:radial-gradient(circle at 35% 28%,#a9b8ff,#5a6eff 60%,#3d4fd6); }
+  #btnAb { background:radial-gradient(circle at 35% 28%,#d6b8ff,#9b5cff 60%,#7437d6); }
+  #btnEmote { background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.75),rgba(255,255,255,.3)); }
+  /* layar muat */
+  #loading { background:radial-gradient(ellipse at 50% 28%,#fff6d8 0%,rgba(255,246,216,0) 42%),linear-gradient(#2f6fd0 0%,#8fc9ff 55%,#ffe9c9 100%); }
+  #loading h1 { font-size:46px; } #loadTxt { text-shadow:0 2px 0 rgba(42,30,74,.5); letter-spacing:.5px; }
+  #loadBar { height:16px; background:rgba(42,30,74,.4); box-shadow:0 0 0 3px #fff3c4, 0 4px 0 3px rgba(42,30,74,.3); border-radius:10px; }
+  #loadFill { border-radius:10px; background:linear-gradient(rgba(255,255,255,.6),rgba(255,255,255,0) 50%),linear-gradient(#ffe58a,#f2a93b); }
+  #vig { background:radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(30,16,60,.3) 100%); }
+  @media (max-height:520px) { .crest { display:none; } .panel { padding-top:16px; } }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="loading"><h1>ASGARDIAN</h1><div id="loadBar"><div id="loadFill"></div></div><div id="loadTxt">Memuat para dewa...</div></div>
+<div id="loading"><svg class="crest" viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3c4"/><stop offset="1" stop-color="#f2a93b"/></linearGradient><radialGradient id="cb" cx=".5" cy=".35" r=".7"><stop offset="0" stop-color="#6a4fd0"/><stop offset="1" stop-color="#2a1e4a"/></radialGradient></defs><circle cx="60" cy="60" r="44" fill="url(#cb)" stroke="url(#cg)" stroke-width="6"/><g fill="url(#cg)"><ellipse cx="22" cy="78" rx="6" ry="13" transform="rotate(-35 22 78)"/><ellipse cx="14" cy="58" rx="6" ry="13" transform="rotate(-8 14 58)"/><ellipse cx="18" cy="37" rx="6" ry="13" transform="rotate(22 18 37)"/><ellipse cx="98" cy="78" rx="6" ry="13" transform="rotate(35 98 78)"/><ellipse cx="106" cy="58" rx="6" ry="13" transform="rotate(8 106 58)"/><ellipse cx="102" cy="37" rx="6" ry="13" transform="rotate(-22 102 37)"/></g><path d="M68 22 40 64h17l-7 34 31-46H63z" fill="#ffe58a" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg><h1>ASGARDIAN</h1><div id="loadBar"><div id="loadFill"></div></div><div id="loadTxt">Memuat para dewa...</div></div>
 
 <button id="muteBtn" title="Suara">🔊</button>
 <button id="setBtn" title="Pengaturan">⚙️</button>
@@ -174,11 +251,12 @@
 
 <div id="mode" class="screen">
   <div class="panel">
+    <svg class="crest" viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3c4"/><stop offset="1" stop-color="#f2a93b"/></linearGradient><radialGradient id="cb" cx=".5" cy=".35" r=".7"><stop offset="0" stop-color="#6a4fd0"/><stop offset="1" stop-color="#2a1e4a"/></radialGradient></defs><circle cx="60" cy="60" r="44" fill="url(#cb)" stroke="url(#cg)" stroke-width="6"/><g fill="url(#cg)"><ellipse cx="22" cy="78" rx="6" ry="13" transform="rotate(-35 22 78)"/><ellipse cx="14" cy="58" rx="6" ry="13" transform="rotate(-8 14 58)"/><ellipse cx="18" cy="37" rx="6" ry="13" transform="rotate(22 18 37)"/><ellipse cx="98" cy="78" rx="6" ry="13" transform="rotate(35 98 78)"/><ellipse cx="106" cy="58" rx="6" ry="13" transform="rotate(8 106 58)"/><ellipse cx="102" cy="37" rx="6" ry="13" transform="rotate(-22 102 37)"/></g><path d="M68 22 40 64h17l-7 34 31-46H63z" fill="#ffe58a" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>
     <h1>ASGARDIAN</h1>
     <div class="tag">Party Royale Para Dewa ⚡</div>
-    <button class="mbtn" id="modeSolo"><b>🤖 Main Sendiri</b><span>Lawan bot, tanpa perlu pemain lain</span></button>
-    <button class="mbtn" id="modeLan"><b>📶 Multiplayer WiFi</b><span>Main bareng teman di WiFi yang sama</span></button>
-    <button class="mbtn" id="modeOnline" disabled><b>🌐 Online</b><span>Segera hadir</span></button>
+    <button class="mbtn" id="modeSolo"><i class="ic">🤖</i><b>Main Sendiri</b><span>Lawan bot, tanpa perlu pemain lain</span></button>
+    <button class="mbtn" id="modeLan"><i class="ic">📶</i><b>Multiplayer WiFi</b><span>Main bareng teman di WiFi yang sama</span></button>
+    <button class="mbtn" id="modeOnline" disabled><i class="ic">🌐</i><b>Online</b><span>Segera hadir</span></button>
   </div>
 </div>
 

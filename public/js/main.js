@@ -1,7 +1,7 @@
 // Asgardian - klien: render, input, jaringan, UI
 import * as THREE from '/vendor/three.module.js';
-import { GODS, SKINS, makeGod, animateGod, godColor, loadGodAssets } from './gods.js';
-import { LEVELS, buildLevel, buildPlaza } from './levels.js';
+import { GODS, SKINS, makeGod, animateGod, godColor, loadGodAssets, setGodLOD } from './gods.js';
+import { LEVELS, buildLevel, buildPlaza, optimizeLevel } from './levels.js';
 import { loadProps, prop } from './props.js';
 import { newEnt, stepEnt, postStep, spawnAt, separate, lerpAngle, ABILITIES, AB_CD, castSelf, applyArea, touchApple, diveBump } from './sim.js';
 
@@ -28,33 +28,61 @@ sun.position.set(30, 60, -25);
 scene.add(sun, sun.target);
 // bayangan asli; otomatis dimatikan kalau perangkat keberatan (lihat tuneQuality)
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = ('ontouchstart' in window || navigator.maxTouchPoints > 0) ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; // HP: saringan bayangan yang lebih murah
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 170 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05;
 const SUN_OFF = new THREE.Vector3(-28, 52, 16);
-const quality = { acc: 0, n: 0, level: 3, mode: 'auto' };
+const quality = { acc: 0, n: 0, level: 3, mode: 'auto', scale: 1, cool: 0, hold: 5, slow: 0, futile: 0, lastAvg: 0, floorMin: 0, wait: 3 };
 const BASE_DPR = Math.min(window.devicePixelRatio || 1, 1.5);
 renderer.setPixelRatio(BASE_DPR);
-renderer.shadowMap.autoUpdate = false; // bayangan diperbarui tiap 2 frame (lihat frame())
-// level: 3 = bayangan + resolusi penuh, 2 = bayangan + resolusi 1x, 1 = tanpa bayangan, 0 = tanpa bayangan + resolusi rendah
+renderer.shadowMap.autoUpdate = false; // bayangan diperbarui tiap 2-3 frame (lihat frame())
+// level (fitur): 3 = bayangan + resolusi penuh, 2 = bayangan + resolusi 1x, 1 = tanpa bayangan, 0 = tanpa bayangan + resolusi rendah
+// scale (resolusi adaptif): diturunkan/dinaikkan pelan-pelan mengikuti fps, supaya efek tetap menyala
+// dan yang dikorbankan lebih dulu hanyalah ketajaman
+const DPR_CAP = [0.75, 1, 1, BASE_DPR];
+function setRes() {
+  renderer.setPixelRatio(Math.max(0.5, (DPR_CAP[quality.level] ?? BASE_DPR) * quality.scale));
+  resize();
+}
 function applyQuality(level) {
   quality.level = level;
   sun.castShadow = level >= 2;
-  renderer.setPixelRatio([0.75, 1, 1, BASE_DPR][level] ?? BASE_DPR);
-  resize();
+  setRes();
 }
 function tuneQuality(dt) {
-  if (quality.mode !== 'auto') return;
-  quality.acc += dt; quality.n++;
-  if (quality.n < 120) return;
+  if (quality.mode === 'low') return;
+  if ((quality.wait -= dt) > 0) return; // baru ganti adegan: lewati sentakan saat memuat/kompilasi shader
+  quality.acc += dt; quality.n++; quality.cool -= dt;
+  if (quality.n < 45) return;
   const avg = quality.acc / quality.n;
   quality.acc = 0; quality.n = 0;
-  // di bawah ~42 fps turunkan satu tingkat; ke tingkat terendah (resolusi buram) hanya kalau di bawah 30 fps
-  if (quality.level > 0 && avg > (quality.level === 1 ? 1 / 30 : 1 / 42)) {
-    applyQuality(quality.level - 1);
-    report('quality -> ' + quality.level + ' (avg ms ' + (avg * 1000).toFixed(1) + ')');
+  const minS = quality.mode === 'auto' ? 0.7 : 0.6;
+  if (avg > 1 / 50) {
+    const lo = Math.max(minS, quality.floorMin);
+    if (quality.lastAvg) { quality.futile = avg > quality.lastAvg * 0.93 ? quality.futile + 1 : 0; quality.lastAvg = 0; }
+    if (quality.futile >= 2) {
+      // dua kali menurunkan resolusi tanpa hasil = bebannya di CPU, bukan di piksel: kembalikan ketajaman dan berhenti menurunkan
+      quality.futile = 0; quality.scale = Math.min(1, quality.scale + 0.14); quality.floorMin = quality.scale;
+      setRes();
+      report('res scale tidak menolong, kembali ke ' + quality.scale.toFixed(2));
+    } else if (quality.scale > lo + 0.01) {
+      // di bawah 50 fps: kurangi resolusi dulu
+      quality.lastAvg = avg;
+      quality.scale = Math.max(lo, quality.scale - (avg > 1 / 35 ? 0.15 : 0.07));
+      quality.cool = quality.hold; quality.hold = Math.min(45, quality.hold * 1.6);
+      setRes();
+      report('res scale -> ' + quality.scale.toFixed(2) + ' (avg ms ' + (avg * 1000).toFixed(1) + ')');
+    } else if (quality.mode === 'auto' && quality.level > 0 && avg > (quality.level === 1 ? 1 / 30 : 1 / 42) && ++quality.slow >= 2) {
+      // mode otomatis: resolusi sudah mentok dan masih berat -> matikan bayangan, lalu resolusi rendah
+      quality.slow = 0; quality.scale = Math.max(quality.floorMin, quality.level > 1 ? 0.85 : 1); quality.cool = 8; quality.lastAvg = 0; quality.futile = 0;
+      applyQuality(quality.level > 1 ? 1 : 0);
+      report('quality -> ' + quality.level + ' (avg ms ' + (avg * 1000).toFixed(1) + ')');
+    }
+  } else {
+    quality.slow = 0;
+    if (avg < 1 / 57 && quality.scale < 1 && quality.cool <= 0) { quality.scale = Math.min(1, quality.scale + 0.05); quality.cool = 2; setRes(); }
   }
 }
 
@@ -70,9 +98,84 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 resize();
 
-const dome = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
-dome.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(dome.geometry.attributes.position.count * 3), 3));
+// langit: satu shader murah (gradasi + pendar matahari + awan bergerak + bintang berkelip + aurora)
+// awan/bintang diambil dari satu tekstur derau kecil, jadi hanya 2-3 kali baca tekstur per piksel
+const skyNoise = (() => {
+  const S = 128, d = new Uint8Array(S * S * 4);
+  const fbm = () => {
+    const octs = [[4, 0.5], [8, 0.25], [16, 0.15], [32, 0.1]].map(([p, a]) => [p, a, Float32Array.from({ length: p * p }, Math.random)]);
+    return (x, y) => {
+      let v = 0;
+      for (const [p, a, g] of octs) {
+        const fx = x / S * p, fy = y / S * p, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+        const at = (i, j) => g[((j + p) % p) * p + ((i + p) % p)];
+        v += a * ((at(x0, y0) * (1 - sx) + at(x0 + 1, y0) * sx) * (1 - sy) + (at(x0, y0 + 1) * (1 - sx) + at(x0 + 1, y0 + 1) * sx) * sy);
+      }
+      return v;
+    };
+  };
+  const f1 = fbm(), f2 = fbm();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const i = (y * S + x) * 4; d[i] = f1(x, y) * 255; d[i + 1] = f2(x, y) * 255; d[i + 2] = Math.random() < 0.012 ? 90 + Math.random() * 165 : 0; d[i + 3] = 255; }
+  const t = new THREE.DataTexture(d, S, S, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
+  return t;
+})();
+const SUN_DIR = new THREE.Vector3(-0.45, 0.4, 0.8).normalize();
+const skyU = { cTop: { value: new THREE.Color() }, cMid: { value: new THREE.Color() }, cBot: { value: new THREE.Color() }, cCloud: { value: new THREE.Color(0xffffff) }, cSun: { value: new THREE.Color(0xfff0c8) },
+  sunDir: { value: SUN_DIR }, uT: { value: 0 }, uCloud: { value: 0.6 }, uStars: { value: 0 }, uAurora: { value: 0 }, nz: { value: skyNoise } };
+const dome = new THREE.Mesh(new THREE.SphereGeometry(500, 24, 12), new THREE.ShaderMaterial({
+  uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: 'varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }',
+  fragmentShader: `uniform vec3 cTop, cMid, cBot, cCloud, cSun, sunDir; uniform float uT, uCloud, uStars, uAurora; uniform sampler2D nz; varying vec3 vDir;
+    void main() {
+      vec3 d = normalize( vDir ); float h = d.y;
+      vec3 col = h > 0.05 ? mix( cMid, cTop, min( 1.0, ( h - 0.05 ) / 0.45 ) ) : mix( cBot, cMid, clamp( ( h + 0.07 ) / 0.12, 0.0, 1.0 ) );
+      float sd = max( dot( d, sunDir ), 0.0 );
+      col += cSun * ( pow( sd, 7.0 ) * 0.16 + pow( sd, 80.0 ) * 0.3 );
+      if ( uStars > 0.0 ) {
+        vec2 su = d.xz / ( abs( h ) + 1.0 ) * 4.0; float st = texture2D( nz, su ).b;
+        col += vec3( 0.9, 0.95, 1.0 ) * st * st * ( 0.6 + 0.4 * sin( uT * 2.6 + su.x * 43.0 + su.y * 29.0 ) ) * uStars * smoothstep( -0.08, 0.2, h );
+      }
+      if ( uAurora > 0.0 ) {
+        float ang = atan( d.x, d.z ), n1 = texture2D( nz, vec2( ang * 0.3183 + uT * 0.006, h * 0.2 + uT * 0.003 ) ).r;
+        float cur = pow( smoothstep( 0.42, 0.72, n1 ), 1.5 ) * smoothstep( 0.06, 0.28, h ) * ( 1.0 - smoothstep( 0.4, 0.8, h ) );
+        col += mix( vec3( 0.2, 1.0, 0.6 ), vec3( 0.65, 0.35, 1.0 ), smoothstep( 0.15, 0.6, h ) ) * cur * ( 0.65 + 0.35 * sin( ang * 84.0 + n1 * 22.0 ) ) * uAurora;
+      }
+      if ( uCloud > 0.0 && h > 0.0 ) {
+        vec2 cu = d.xz / ( h + 0.2 );
+        float n = texture2D( nz, cu * 0.09 + vec2( uT * 0.004, uT * 0.0015 ) ).r * 0.65 + texture2D( nz, cu * 0.27 - vec2( uT * 0.006, 0.0 ) ).g * 0.35;
+        float dens = smoothstep( 0.54 - uCloud * 0.14, 0.76 - uCloud * 0.1, n ) * smoothstep( 0.0, 0.14, h );
+        col = mix( col, cCloud * ( 0.86 + 0.22 * pow( sd, 3.0 ) ), dens * 0.8 );
+      }
+      gl_FragColor = vec4( col, 1.0 );
+      #include <colorspace_fragment>
+    }`,
+}));
 dome.renderOrder = -10; dome.frustumCulled = false;
+// lautan awan di bawah pulau-pulau terbang (satu bidang, memakai tekstur derau yang sama)
+const cloudFloor = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+  uniforms: { nz: { value: skyNoise }, uT: skyU.uT, cLit: { value: new THREE.Color(0xffffff) }, cShade: { value: new THREE.Color(0xc9c2e8) }, cFog: skyU.cBot },
+  transparent: true, depthWrite: false, fog: false,
+  vertexShader: 'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4( position, 1.0 ); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+  fragmentShader: `uniform sampler2D nz; uniform float uT; uniform vec3 cLit, cShade, cFog; varying vec3 vW;
+    void main() {
+      vec2 p = vW.xz * 0.0052;
+      float n = texture2D( nz, p + vec2( uT * 0.0025, uT * 0.001 ) ).r * 0.62 + texture2D( nz, p * 2.9 - vec2( uT * 0.004, 0.0 ) ).g * 0.38;
+      float a = smoothstep( 0.4, 0.58, n );
+      vec3 col = mix( cShade, cLit, smoothstep( 0.46, 0.7, n ) );
+      float far = smoothstep( 180.0, 620.0, distance( vW, cameraPosition ) );
+      gl_FragColor = vec4( mix( col, cFog, far ), a * ( 1.0 - far * 0.85 ) );
+      #include <colorspace_fragment>
+    }`,
+}));
+cloudFloor.renderOrder = -8; cloudFloor.frustumCulled = false; cloudFloor.visible = false;
+function setCloudFloor(y) {
+  cloudFloor.visible = y !== undefined && y !== null;
+  if (!cloudFloor.visible) return;
+  cloudFloor.position.y = y;
+  cloudFloor.material.uniforms.cShade.value.copy(skyU.cMid.value).lerp(new THREE.Color(0x8f86c9), 0.45);
+  cloudFloor.material.uniforms.cLit.value.set(0xffffff).lerp(skyU.cBot.value, 0.25);
+}
 const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 2, 64, 64, 64);
@@ -81,24 +184,22 @@ const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: (() => {
   return new THREE.CanvasTexture(c);
 })(), fog: false, depthWrite: false, blending: THREE.AdditiveBlending }));
 sunSprite.scale.set(190, 190, 1); sunSprite.renderOrder = -9;
-scene.add(dome, sunSprite);
-const SUN_DIR = new THREE.Vector3(-0.45, 0.4, 0.8).normalize();
-function setSky(cols, fog) {
-  // kubah langit 3D (ikut kamera) + matahari berpendar
-  const top = new THREE.Color(cols[0]), mid = new THREE.Color(cols[1]), bot = new THREE.Color(cols[2]), tmp = new THREE.Color();
-  const pos = dome.geometry.attributes.position, col = dome.geometry.attributes.color;
-  for (let i = 0; i < pos.count; i++) {
-    const h = pos.getY(i) / 500;
-    if (h > 0.05) tmp.copy(mid).lerp(top, Math.min(1, (h - 0.05) / 0.45)); else tmp.copy(bot).lerp(mid, Math.max(0, (h + 0.07) / 0.12));
-    col.setXYZ(i, tmp.r, tmp.g, tmp.b);
-  }
-  col.needsUpdate = true;
+scene.add(dome, sunSprite, cloudFloor);
+// fx (opsional): { cloud: 0..1, cloudCol, stars: 0..1, aurora: 0..1 }
+function setSky(cols, fog, fx) {
+  const top = skyU.cTop.value.set(cols[0]), mid = skyU.cMid.value.set(cols[1]), bot = new THREE.Color(cols[2]);
+  skyU.cBot.value.copy(bot);
   scene.background = bot;
-  const dark = top.r + top.g + top.b < 0.5;
+  const dark = top.r + top.g + top.b < 0.5, f = fx || {};
   sunSprite.visible = !dark;
   sunSprite.material.color.copy(mid).lerp(new THREE.Color(0xffffff), 0.6);
-  const f = fog || [150, 560];
-  scene.fog = new THREE.Fog(cols[2], f[0], f[1]);
+  skyU.cSun.value.copy(mid).lerp(new THREE.Color(0xffffff), 0.5).multiplyScalar(dark ? 0 : 1);
+  skyU.uCloud.value = f.cloud ?? (dark ? 0.35 : 0.6);
+  skyU.cCloud.value.set(f.cloudCol ?? 0xffffff); if (f.cloudCol === undefined) skyU.cCloud.value.lerp(mid, dark ? 0.75 : 0.12);
+  skyU.uStars.value = f.stars ?? (dark ? 1 : 0);
+  skyU.uAurora.value = f.aurora ?? 0;
+  const fg = fog || [150, 560];
+  scene.fog = new THREE.Fog(cols[2], fg[0], fg[1]);
 }
 
 function disposeTree(o) {
@@ -213,39 +314,66 @@ function softTex(draw) {
   return new THREE.CanvasTexture(c);
 }
 const dotTex = softTex(x => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,0.75)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
-const sqTex = softTex(x => { x.fillStyle = '#fff'; x.beginPath(); x.roundRect ? x.roundRect(10, 16, 44, 32, 6) : x.rect(10, 16, 44, 32); x.fill(); });
-// partikel: titik lembut (debu, percikan) dan kertas konfeti
-const parts = [];
-function burst(pos, colors, n = 10, sp = 5) {
-  const confetti = colors === CONFETTI;
+// partikel: semua titik (debu, percikan, bunga api aditif, kertas konfeti) digambar dalam SATU draw call
+const PN = IS_TOUCH ? 300 : 520;
+const pPos = new Float32Array(PN * 3), pCol = new Float32Array(PN * 4), pDat = new Float32Array(PN * 3);
+const pVel = new Float32Array(PN * 3), pLife = new Float32Array(PN), pMax = new Float32Array(PN), pSize = new Float32Array(PN), pSpin = new Float32Array(PN), pGrav = new Float32Array(PN), pDrag = new Float32Array(PN);
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+pGeo.setAttribute('col', new THREE.BufferAttribute(pCol, 4));
+pGeo.setAttribute('dat', new THREE.BufferAttribute(pDat, 3)); // ukuran, putaran, jenis (0 titik, 1 aditif, 2 konfeti)
+const pMat = new THREE.ShaderMaterial({
+  uniforms: { uScale: { value: 500 } }, transparent: true, depthWrite: false, premultipliedAlpha: true,
+  vertexShader: `attribute vec4 col; attribute vec3 dat; varying vec4 vCol; varying vec3 vDat; uniform float uScale;
+    void main() { vCol = col; vDat = dat; vec4 mv = modelViewMatrix * vec4( position, 1.0 ); gl_Position = projectionMatrix * mv; gl_PointSize = dat.x * uScale / max( 0.1, -mv.z ); }`,
+  fragmentShader: `varying vec4 vCol; varying vec3 vDat;
+    void main() {
+      vec2 p = gl_PointCoord - 0.5; float a;
+      if ( vDat.z > 1.5 ) { float c = cos( vDat.y ), s = sin( vDat.y ); vec2 q = vec2( c * p.x - s * p.y, s * p.x + c * p.y ); q.x /= max( 0.3, abs( cos( vDat.y * 1.7 ) ) ); a = step( abs( q.x ), 0.34 ) * step( abs( q.y ), 0.2 ); }
+      else { float d = length( p ) * 2.0; a = vDat.z > 0.5 ? pow( max( 0.0, 1.0 - d ), 1.6 ) : smoothstep( 1.0, 0.35, d ); }
+      a *= vCol.a; if ( a < 0.012 ) discard;
+      gl_FragColor = vec4( vCol.rgb, 1.0 );
+      #include <colorspace_fragment>
+      gl_FragColor = vec4( gl_FragColor.rgb * a, vDat.z > 0.5 && vDat.z < 1.5 ? 0.0 : a );
+    }`,
+});
+const pPts = new THREE.Points(pGeo, pMat);
+pPts.frustumCulled = false; pPts.renderOrder = 5; scene.add(pPts);
+let pCur = 0;
+const _pc = new THREE.Color();
+// o (opsional): { add: aditif, size, life, grav, up: dorongan ke atas, drag }
+function burst(pos, colors, n = 10, sp = 5, o) {
+  const confetti = colors === CONFETTI, kind = confetti ? 2 : o && o.add ? 1 : 0;
   for (let i = 0; i < n; i++) {
-    let p = parts.find(q => q.life <= 0);
-    if (!p) {
-      if (parts.length > 170) return;
-      p = { m: new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false })), v: new THREE.Vector3(), life: 0, max: 1, size: 1, spin: 0 };
-      scene.add(p.m); parts.push(p);
-    }
-    const mt = p.m.material;
-    mt.map = confetti ? sqTex : dotTex; mt.color.set(colors[i % colors.length]); mt.opacity = 1; mt.needsUpdate = true;
-    p.m.position.copy(pos); p.m.position.y += 0.4;
-    p.v.set((Math.random() - 0.5) * sp, Math.random() * sp, (Math.random() - 0.5) * sp);
-    p.max = p.life = (confetti ? 0.9 : 0.45) + Math.random() * 0.6;
-    p.size = confetti ? 0.3 + Math.random() * 0.15 : 0.35 + Math.random() * 0.3;
-    p.spin = confetti ? (Math.random() - 0.5) * 14 : 0; p.grav = confetti ? 5 : 9;
-    p.m.visible = true;
+    let k = -1;
+    for (let j = 0; j < PN; j++) { const q = (pCur + j) % PN; if (pLife[q] <= 0) { k = q; break; } }
+    if (k < 0) return;
+    pCur = (k + 1) % PN;
+    _pc.set(colors[i % colors.length]);
+    pCol[k * 4] = _pc.r; pCol[k * 4 + 1] = _pc.g; pCol[k * 4 + 2] = _pc.b; pCol[k * 4 + 3] = 1;
+    pPos[k * 3] = pos.x; pPos[k * 3 + 1] = pos.y + 0.4; pPos[k * 3 + 2] = pos.z;
+    pVel[k * 3] = (Math.random() - 0.5) * sp; pVel[k * 3 + 1] = Math.random() * sp + (o && o.up || 0); pVel[k * 3 + 2] = (Math.random() - 0.5) * sp;
+    pMax[k] = pLife[k] = ((o && o.life) || (confetti ? 0.9 : 0.45)) + Math.random() * 0.6;
+    pSize[k] = confetti ? 0.42 + Math.random() * 0.2 : ((o && o.size) || 0.35) * (1 + Math.random() * 0.85);
+    pSpin[k] = confetti ? (Math.random() - 0.5) * 14 : 0; pGrav[k] = o && o.grav !== undefined ? o.grav : confetti ? 5 : 9; pDrag[k] = confetti ? 1.5 : (o && o.drag) || 0;
+    pDat[k * 3 + 1] = Math.random() * 6.28; pDat[k * 3 + 2] = kind;
   }
 }
 function tickParts(dt) {
-  for (const p of parts) {
-    if (p.life <= 0) continue;
-    p.life -= dt; p.v.y -= p.grav * dt;
-    if (p.spin) { p.v.x *= 1 - 1.5 * dt; p.v.z *= 1 - 1.5 * dt; p.m.material.rotation += p.spin * dt; }
-    p.m.position.addScaledVector(p.v, dt);
-    const k = Math.max(0, p.life / p.max), sc = p.size * (p.spin ? 1 : 0.4 + 0.6 * k);
-    p.m.scale.set(sc * (p.spin ? 0.6 + 0.4 * Math.abs(Math.sin(p.life * 9)) : 1), sc, 1);
-    p.m.material.opacity = Math.min(1, k * 2.2);
-    if (p.life <= 0) p.m.visible = false;
+  pMat.uniforms.uScale.value = renderer.domElement.height * 0.5 / Math.tan(camera.fov * Math.PI / 360);
+  for (let k = 0; k < PN; k++) {
+    if (pLife[k] <= 0) continue;
+    pLife[k] -= dt;
+    const a = k * 3;
+    pVel[a + 1] -= pGrav[k] * dt;
+    if (pDrag[k]) { const d = 1 - Math.min(1, pDrag[k] * dt); pVel[a] *= d; pVel[a + 2] *= d; }
+    pPos[a] += pVel[a] * dt; pPos[a + 1] += pVel[a + 1] * dt; pPos[a + 2] += pVel[a + 2] * dt;
+    const f = Math.max(0, pLife[k] / pMax[k]);
+    pDat[a] = pLife[k] <= 0 ? 0 : pSize[k] * (pSpin[k] ? 1 : 0.4 + 0.6 * f);
+    pDat[a + 1] += pSpin[k] * dt;
+    pCol[k * 4 + 3] = Math.min(1, f * 2.2);
   }
+  pGeo.attributes.position.needsUpdate = pGeo.attributes.col.needsUpdate = pGeo.attributes.dat.needsUpdate = true;
 }
 // partikel suasana per map (serbuk emas, bara, salju, daun, gelembung)
 const AMB_N = 240, ambPos = new Float32Array(AMB_N * 3), amb = { vy: 0.5, sway: 0.6, on: false };
@@ -277,10 +405,11 @@ function tickAmbient(dt, t) {
   ambGeo.attributes.position.needsUpdate = true;
 }
 // cincin kejut kekuatan dewa
-const rings = [], ringGeo = new THREE.RingGeometry(0.82, 1, 40);
+const rings = [], ringGeo = new THREE.PlaneGeometry(2, 2);
+const ringTex = softTex(x => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.55, 'rgba(255,255,255,0.08)'); g.addColorStop(0.8, 'rgba(255,255,255,0.55)'); g.addColorStop(0.9, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
 function ring(pos, color, radius) {
   let r = rings.find(q => q.life <= 0);
-  if (!r) { r = { m: new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide })), life: 0, rad: 1 }; r.m.rotation.x = -Math.PI / 2; scene.add(r.m); rings.push(r); }
+  if (!r) { if (rings.length > 20) return; r = { m: new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ map: ringTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })), life: 0, rad: 1 }; r.m.rotation.x = -Math.PI / 2; scene.add(r.m); rings.push(r); }
   r.m.material.color.set(color); r.m.position.copy(pos); r.m.position.y += 0.15; r.life = 0.5; r.rad = radius; r.m.visible = true;
 }
 function tickRings(dt) {
@@ -304,8 +433,23 @@ function bolts(pos, r, n, color) {
   }
 }
 function tickBolts(dt) { for (const b of boltPool) { if (b.life <= 0) continue; b.life -= dt; b.m.material.opacity = Math.min(1, b.life * 7); b.m.scale.x = b.m.scale.z = 0.6 + Math.random() * 0.9; if (b.life <= 0) b.m.visible = false; } }
-const auraGeo = new THREE.SphereGeometry(1.15, 16, 12);
+const auraGeo = new THREE.SphereGeometry(1.15, 20, 14);
+const makeAura = () => new THREE.Mesh(auraGeo, new THREE.ShaderMaterial({
+  uniforms: { uCol: { value: new THREE.Color() }, uT: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: 'varying vec3 vN, vV; varying float vY; void main() { vec4 mv = modelViewMatrix * vec4( position, 1.0 ); vN = normalize( normalMatrix * normal ); vV = normalize( -mv.xyz ); vY = position.y; gl_Position = projectionMatrix * mv; }',
+  fragmentShader: `uniform vec3 uCol; uniform float uT; varying vec3 vN, vV; varying float vY;
+    void main() {
+      float f = pow( 1.0 - abs( dot( normalize( vN ), normalize( vV ) ) ), 2.2 );
+      float band = 0.75 + 0.25 * sin( vY * 9.0 - uT * 7.0 );
+      gl_FragColor = vec4( uCol * ( f * 0.85 + 0.04 ) * band, 1.0 );
+      #include <colorspace_fragment>
+    }`,
+}));
 const CONFETTI = [0xff4d4d, 0xffe14d, 0x5fe07a, 0x4dc3ff, 0xc05cff, 0xffffff];
+// resep partikel
+const FX_GLOW = { add: true, size: 0.4, grav: 0, life: 0.3 }, FX_DUST = { size: 0.42, grav: 2, life: 0.35, drag: 3 }, FX_SPARK = { add: true, size: 0.3, grav: 12, life: 0.3 },
+  FX_RISE = { add: true, size: 0.35, grav: -5, life: 0.5, drag: 2 }, FX_TRAIL = { add: true, size: 0.55, grav: 0, life: 0.25, drag: 2 },
+  FX_EMBER = { add: true, size: 0.26, grav: -1.6, up: 2.5, life: 1.5, drag: 0.6 }, FX_GLINT = { add: true, size: 0.5, grav: 0, life: 0.35 }, FX_TWINKLE = { add: true, size: 0.3, grav: -0.8, life: 0.6 };
 
 // ------------------------------------------------------------ state
 const G = {
@@ -392,7 +536,7 @@ function buildPreview() {
 }
 function enterMenuScene() {
   preview.visible = true; setAmbient('plaza'); setLights('def');
-  setSky(['#3a7bd5', '#9fd3ff', '#ffe9c9']);
+  setSky(['#3a7bd5', '#9fd3ff', '#ffe9c9']); setCloudFloor(-14);
   buildPreview();
 }
 
@@ -476,16 +620,19 @@ $('muteBtn').textContent = muted ? '🔇' : '🔊';
 const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH, ts: 1 };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('asg_opts') || '{}')); } catch { /* */ }
 function applyOpts() {
-  quality.mode = opts.q;
-  if (opts.q !== 'auto') applyQuality({ high: 3, med: 2, low: 0 }[opts.q] ?? 3);
+  if (quality.mode !== opts.q || !quality.inited) {
+    quality.mode = opts.q; quality.inited = true; quality.hold = 5; quality.slow = 0; quality.futile = 0; quality.lastAvg = 0; quality.floorMin = 0;
+    // HP mulai sedikit di bawah resolusi penuh; resolusi adaptif menaikkannya sendiri kalau perangkatnya kuat
+    quality.scale = opts.q === 'low' ? 1 : IS_TOUCH ? 0.85 : 1;
+    applyQuality({ auto: 3, high: 3, med: 2, low: 0 }[opts.q] ?? 3);
+  }
   document.documentElement.style.setProperty('--ts', opts.ts); $('optT').value = opts.ts;
   $('optQ').value = opts.q; $('optS').value = opts.sens; $('optI').checked = !!opts.invert; $('optA').checked = !!opts.autoCam;
   try { localStorage.setItem('asg_opts', JSON.stringify(opts)); } catch { /* */ }
 }
 $('setBtn').onclick = () => $('settings').classList.toggle('hidden');
-$('optQ').onchange = e => { opts.q = e.target.value; if (opts.q === 'auto') applyQuality(3); applyOpts();
-// HP: mulai dari kualitas menengah dan partikel suasana lebih sedikit
-if (IS_TOUCH) { if (opts.q === 'auto') applyQuality(2); ambGeo.setDrawRange(0, 110); } };
+$('optQ').onchange = e => { opts.q = e.target.value; applyOpts(); };
+if (IS_TOUCH) ambGeo.setDrawRange(0, 120); // HP: partikel suasana lebih sedikit
 $('optS').oninput = e => { opts.sens = +e.target.value || 1; applyOpts(); };
 $('optI').onchange = e => { opts.invert = e.target.checked; applyOpts(); };
 $('optA').onchange = e => { opts.autoCam = e.target.checked; applyOpts(); };
@@ -655,8 +802,10 @@ const ON = {
 };
 
 // ------------------------------------------------------------ ronde
-const shGeo = new THREE.CircleGeometry(0.5, 16);
-const shMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false });
+// jarak LOD karakter: di luar LOD_LINE tanpa garis tepi/bayangan asli, di luar LOD_FAR badan poligon rendah
+const LOD_LINE = IS_TOUCH ? 24 : 40, LOD_FAR = IS_TOUCH ? 30 : 55;
+const shGeo = new THREE.PlaneGeometry(1.5, 1.5);
+const shMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, map: softTex(x => { const g = x.createRadialGradient(32, 32, 4, 32, 32, 30); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,0.7)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); }) });
 
 function makeLabel(text, mine) {
   const c = document.createElement('canvas');
@@ -714,7 +863,7 @@ function setLights(key) {
   const l = LIGHTS[key] || LIGHTS.def;
   // warna dilunakkan ke putih supaya warna asli tiap dewa tetap terbaca
   const W = new THREE.Color(0xffffff);
-  sun.color.set(l[0]).lerp(W, 0.55); sun.intensity = l[1]; hemi.color.set(l[2]).lerp(W, 0.55); hemi.groundColor.set(l[3]).lerp(new THREE.Color(0x9a8fc0), 0.45); hemi.intensity = Math.max(l[4], 1.5);
+  sun.color.set(l[0]).lerp(W, 0.5); sun.intensity = l[1] * 1.12; hemi.color.set(l[2]).lerp(W, 0.5); hemi.groundColor.set(l[3]).lerp(new THREE.Color(0x9a8fc0), 0.4); hemi.intensity = Math.max(l[4], 1.5) * 0.86;
 }
 function prepLevel(L) {
   L.group.traverse(o => {
@@ -724,8 +873,10 @@ function prepLevel(L) {
     o.getWorldPosition(tmpV);
     o.castShadow = Math.abs(tmpV.x) < 20 && tmpV.y > -4 && tmpV.y < 40;
   });
+  try { optimizeLevel(L); } catch (e) { report('optimize gagal ' + (e.stack || e)); }
+  quality.wait = 2.5; quality.acc = quality.n = 0;
   scene.add(L.group);
-  setSky(L.sky, L.fog);
+  setSky(L.sky, L.fog, L.skyFx); setCloudFloor(L.cloudFloor);
 }
 
 function addEnt(id, i, n) {
@@ -901,8 +1052,8 @@ function tickGame(dt, now) {
       }
       if (mine) abQ = false;
       stepEnt(e, i, dt, L, t);
-      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); }
-      if (e.speedT > 0 && e.grounded) burst(e.pos, [0x7fe6ff, 0xffffff], 1, 1.5);
+      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); ring(e.pos, 0xffe07a, 3); burst(e.pos, [0xffe07a, 0xffffff], 10, 4, FX_RISE); }
+      if (e.speedT > 0 && e.grounded) burst(e.pos, [0x7fe6ff, 0xffffff], 1, 1.5, FX_GLOW);
       if (e.anim === 1 && (e.stepAcc = (e.stepAcc || 0) + dt * Math.hypot(e.vel.x, e.vel.z)) > 1.7) { e.stepAcc = 0; SFX.step(); }
       if (emoteQ) { e.emoteT = emoteQ === 5 ? 1.6 : 2.6; e.emoteK = emoteQ === true ? 5 : emoteQ; emoteQ = false; }
       e.emoteT = (e.emoteT || 0) - dt;
@@ -919,11 +1070,11 @@ function tickGame(dt, now) {
       } else if (e.pos.y < L.killY && !G.roundOver) spawnAt(e, L, R.contenders.indexOf(e.id), R.contenders.length);
       if (e.fx) {
         if (e.fx === 'jump') { if (mine) { SFX.jump(); jumpBuf = 0; } burst(e.pos, [0xffffff], 4, 2.5); e.sq = 1.28; }
-        else if (e.fx === 'land') { e.sq = 0.74; burst(e.pos, [0xffffff, 0xf2efe6], 5, 2.2); if (mine) { SFX.land(); cam.dip = 0.25; } }
-        else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { SFX.hit(); cam.shake = 0.45; if (navigator.vibrate) navigator.vibrate(60); } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); }
+        else if (e.fx === 'land') { e.sq = 0.74; burst(e.pos, [0xffffff, 0xf2efe6], 6, 2.6, FX_DUST); ring(e.pos, 0xffffff, 1.3); if (mine) { SFX.land(); cam.dip = 0.25; } }
+        else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { SFX.hit(); cam.shake = 0.45; if (navigator.vibrate) navigator.vibrate(60); } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); burst(e.pos, [0xfff2b0, 0xffffff], 8, 9, FX_SPARK); ring(e.pos, 0xffe07a, 2); }
         else if (e.fx === 'dive' && mine) SFX.dive();
         else if (e.fx === 'block') { ring(e.pos, 0xb9a6ff, 1.6); if (mine) beep(900, 0.08, 'sine', 0.06); }
-        else if (e.fx === 'respawn') { if (mine) SFX.respawn(); burst(e.pos, [0x9ff0ff, 0xffffff], 10, 4); }
+        else if (e.fx === 'respawn') { if (mine) SFX.respawn(); burst(e.pos, [0x9ff0ff, 0xffffff], 14, 3, FX_RISE); ring(e.pos, 0x9ff0ff, 2.2); bolts(e.pos, 0.2, 1, 0x9ff0ff); }
         e.fx = null;
       }
     } else {
@@ -945,13 +1096,15 @@ function tickGame(dt, now) {
     e.prevAnim = e.anim;
     if (e.auraT > 0) {
       e.auraT -= dt;
-      if (!e.aura) { e.aura = new THREE.Mesh(auraGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.28, depthWrite: false })); e.aura.position.y = 0.9; e.model.add(e.aura); }
-      e.aura.material.color.set(e.auraColor); e.aura.visible = e.auraT > 0; e.aura.scale.setScalar(1 + Math.sin(tt * 14) * 0.05);
+      if (!e.aura) { e.aura = makeAura(); e.aura.position.y = 0.9; e.model.add(e.aura); }
+      e.aura.material.uniforms.uCol.value.set(e.auraColor); e.aura.material.uniforms.uT.value = tt; e.aura.visible = e.auraT > 0; e.aura.scale.setScalar(1 + Math.sin(tt * 14) * 0.05);
     }
     e.sq = 1 + ((e.sq || 1) - 1) * Math.exp(-9 * dt);
     const sx = 1 / Math.sqrt(e.sq);
     e.model.scale.set(sx, e.sq, sx);
-    if (e.anim === 1 && (e.dustT = (e.dustT || 0) + dt) > 0.16) { e.dustT = 0; burst(e.pos, [0xffffff], 1, 1.2); }
+    if (e.anim === 1 && (e.dustT = (e.dustT || 0) + dt) > 0.16) { e.dustT = 0; burst(e.pos, [0xffffff], 1, 1.2, FX_DUST); }
+    // jejak cahaya saat menerjang (warna jubah dewa)
+    if (e.anim === 3 && !e.far && (e.trailT = (e.trailT || 0) + dt) > 0.035) { e.trailT = 0; burst(e.pos, [e.trailCol || (e.trailCol = godColor(e.god)), 0xffffff], 1, 0.8, FX_TRAIL); }
     // data gerak untuk animasi (pemain lain: diperkirakan dari perubahan posisi)
     const ax = e.ax || (e.ax = { x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, vy: 0, speed: 0, turn: 0 });
     const inv = 1 / Math.max(dt, 0.001), ka = Math.min(1, dt * 12);
@@ -962,12 +1115,14 @@ function tickGame(dt, now) {
     ax.x = e.pos.x; ax.y = e.pos.y; ax.z = e.pos.z; ax.yaw = e.yaw;
     // hemat: garis tepi hanya untuk karakter dekat, animasi dilewati untuk yang sangat jauh
     const cd = e.model.position.distanceToSquared(camera.position);
-    if (e.model.userData.outline) e.model.userData.outline.visible = cd < 45 * 45;
+    const far = cd > LOD_FAR * LOD_FAR && e.id !== G.me && e !== G.celebrate;
+    setGodLOD(e.model, far, cd < LOD_LINE * LOD_LINE);
+    e.far = far;
     if (cd > 95 * 95 && e.id !== G.me) continue;
     const shown = G.roundOver && G.outcome ? (G.outcome.has(e.id) ? 5 : 6) : (t < 0 && t > -3 && e.anim === 0 ? 7 : e.anim);
     animateGod(e.model, shown, tt, ax);
     const gy = L.groundAt(e.pos.x, e.pos.z, e.pos.y + 0.6);
-    e.shadow.visible = gy > -1e8 && !sun.castShadow;
+    e.shadow.visible = gy > -1e8 && (!sun.castShadow || cd > LOD_LINE * LOD_LINE);
     if (e.shadow.visible) { e.shadow.position.set(e.pos.x, gy + 0.04, e.pos.z); e.shadow.scale.setScalar(Math.max(0.4, 1 - (e.pos.y - gy) * 0.08)); }
   }
 
@@ -1016,6 +1171,19 @@ function tickGame(dt, now) {
     const sh = cam.shake * cam.shake * 1.6;
     camera.position.set(cam.look.x - s * f + (Math.random() - 0.5) * sh, cam.look.y + 1.5 + Math.sin(cam.pitch) * dist + (Math.random() - 0.5) * sh - cam.dip * cam.dip * 3, cam.look.z - c * f);
     camera.lookAt(cam.look.x, cam.look.y + 1.3, cam.look.z);
+  }
+  // efek lingkungan di sekitar kamera: bara lava, arwah Styx, kilau air, kerlip mahkota
+  if ((G.fxT = (G.fxT || 0) + dt) > 0.16) {
+    G.fxT = 0;
+    if (L.seaFx) {
+      tmpV.set(cam.look.x + (Math.random() - 0.5) * 46, L.seaY - 0.2, cam.look.z + Math.random() * 50 - 12);
+      if (L.groundAt(tmpV.x, tmpV.z, 99) < -1e8) {
+        if (L.seaFx === 'lava') burst(tmpV, [0xffb347, 0xff7a1a, 0xffe08a], 2, 1.6, FX_EMBER);
+        else if (L.seaFx === 'wisp') burst(tmpV, [0x7dffc0, 0xc9a6ff], 1, 0.8, FX_EMBER);
+        else burst(tmpV, [0xffffff], 1, 0.2, FX_GLINT);
+      }
+    }
+    if (L.crown && !L.crownTaken) burst(tmpV.set(L.crown.position.x + (Math.random() - 0.5) * 1.6, L.crown.position.y - 0.4, L.crown.position.z + (Math.random() - 0.5) * 1.6), [0xffe07a, 0xffffff], 1, 0.5, FX_TWINKLE);
   }
   // panah apel
   guide.visible = false;
@@ -1119,19 +1287,20 @@ function frame(now) {
   if (testDone) return;
   requestAnimationFrame(frame);
   frameCount++;
-  renderer.shadowMap.needsUpdate = (frameCount & 1) === 0;
+  renderer.shadowMap.needsUpdate = frameCount % (IS_TOUCH ? 3 : 2) === 0;
   perf.acc += now - last; perf.n++;
   const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
   last = now;
   if ((G.phase === 'play' || G.phase === 'lobby') && G.L && G.round) tickGame(dt, now); else { tickMenu(dt, now); if (now > 4000) tuneQuality(dt); }
   tickParts(dt); tickRings(dt); tickBolts(dt); tickAmbient(dt, now / 1000);
-  dome.position.copy(camera.position);
+  dome.position.copy(camera.position); skyU.uT.value = now / 1000;
+  if (cloudFloor.visible) { cloudFloor.position.x = camera.position.x; cloudFloor.position.z = camera.position.z; }
   sunSprite.position.copy(camera.position).addScaledVector(SUN_DIR, 440);
   renderer.render(scene, camera);
   if (shot.on && now > shot.next && shot.n < 16) {
     shot.next = now + shot.every; shot.n++;
     fetch('/debug/shot_' + String(shot.n).padStart(2, '0'), { method: 'POST', body: canvas.toDataURL('image/png') }).catch(() => {});
-    report(`shot ${shot.n} phase=${G.phase} lvl=${G.round ? G.round.level : '-'} ents=${G.ents.size} q=${quality.level}`);
+    report(`shot ${shot.n} phase=${G.phase} lvl=${G.round ? G.round.level : '-'} ents=${G.ents.size} q=${quality.level} s=${quality.scale.toFixed(2)}`);
   }
 }
 // mode tes: tutup tab sendiri setelah ?ttl=detik (atau saat server tes dimatikan) supaya tidak membebani komputer
