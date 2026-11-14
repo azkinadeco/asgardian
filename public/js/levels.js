@@ -18,6 +18,7 @@ export const LEVELS = [
   { name: 'Yggdrasil Climb', sub: 'Pohon Dunia Yggdrasil', type: 'final', goal: 'Panjat pohon dunia, rebut mahkotanya!' },
   { name: 'Jotunheim Slide', sub: 'Negeri Es Jotunheim', type: 'race', goal: 'Hati-hati, lantainya licin!' },
   { name: 'Tidal Rise', sub: 'Menara Karang Poseidon', type: 'survival', goal: 'Air naik! Panjat setinggi mungkin!' },
+  { name: 'Valkyrie Skyway', sub: 'Jalan Langit Valkyrie', type: 'race', goal: 'Lawan angin, pantul di bumper, sampai gerbang senja!' },
 ];
 
 const HAS_DOM = typeof document !== 'undefined';
@@ -718,6 +719,68 @@ function boost(L, x, y, z, w, d) {
   L.obs.push({ hit(e) { if (e.grounded && Math.abs(e.pos.x - x) < w / 2 && Math.abs(e.pos.z - z) < d / 2 && Math.abs(e.pos.y - y) < 0.3) e.speedT = Math.max(e.speedT, 1.0); } });
 }
 
+// bumper: tiang karet yang memantulkan siapa pun yang menyentuhnya
+function bumper(L, x, y, z, r, hw, color = 0xff5fa2) {
+  const g = new THREE.Group();
+  g.position.set(x, y, z); g.userData.dyn = true;
+  L.group.add(g);
+  mesh(new THREE.CylinderGeometry(r, r * 1.08, 1.3, 18), lam(color, { emissive: new THREE.Color(color).multiplyScalar(0.25) }), 0, 0.65, 0, g);
+  for (const yy of [0.35, 0.95]) mesh(new THREE.TorusGeometry(r * 1.03, 0.09, 6, 20), lam(0xffffff), 0, yy, 0, g).rotation.x = Math.PI / 2;
+  mesh(new THREE.SphereGeometry(r * 0.8, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), lam(0xffffff, { emissive: 0x666666 }), 0, 1.3, 0, g);
+  glow(g, 0, 1.2, 0, color, r * 4);
+  let pulse = 0;
+  L.updaters.push(() => { pulse *= 0.86; const k = 1 + pulse * 0.35; g.scale.set(k, 1 - pulse * 0.15, k); });
+  L.obs.push({
+    hit(e) {
+      if (e.pos.y > y + 1.5 || e.pos.y + H < y) return;
+      const dx = e.pos.x - x, dz = e.pos.z - z, d = Math.hypot(dx, dz);
+      if (d > r + R) return;
+      const k = d || 1; pulse = 1;
+      knock(e, (dx / k) * 9, 5.5, (dz / k) * 9, 0.35);
+    },
+    avoid(e) {
+      const dz = z - e.pos.z;
+      if (dz < 0 || dz > 4 || Math.abs(e.pos.x - x) > r + 0.9 || Math.abs(e.pos.y - y) > 2) return 0;
+      let sd = e.pos.x >= x ? 1 : -1;
+      if (Math.abs(e.pos.x + sd * 2) > hw - 0.6) sd = -sd;
+      return sd;
+    },
+  });
+}
+// kipas angin: secara berkala meniup ke samping di satu ruas jalan
+function fan(L, x, y, z, w, d, dir, force, period, ph) {
+  const tex = canvasTex(64, 64, c => { c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.lineCap = 'round'; for (const [yy, x0, len] of [[10, 6, 30], [26, 26, 32], [42, 2, 24], [56, 30, 26]]) { c.beginPath(); c.moveTo(x0, yy); c.lineTo(x0 + len, yy); c.stroke(); } });
+  let plane = null;
+  if (tex) {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(Math.max(1, w / 4), Math.max(1, d / 4));
+    plane = mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, color: 0xcfefff }), x, y + 0.9, z, L.group);
+    plane.rotation.x = -Math.PI / 2; plane.userData.dyn = true;
+  }
+  // menara kipas di sisi asal angin
+  const tw = new THREE.Group();
+  tw.position.set(x - dir * (w / 2 + 1.6), y - 0.4, z);
+  L.group.add(tw);
+  mesh(new THREE.CylinderGeometry(0.5, 0.7, 2.4, 10), lam(STEEL), 0, 1.2, 0, tw);
+  const hubG = new THREE.Group(); hubG.position.set(dir * 0.5, 2.5, 0); hubG.userData.dyn = true; tw.add(hubG);
+  mesh(new THREE.SphereGeometry(0.45, 10, 8), lam(GOLD), 0, 0, 0, hubG);
+  for (let i = 0; i < 4; i++) { const b = mesh(new THREE.BoxGeometry(0.08, 1.7, 0.6), lam(0xe8f4ff), 0, 0, 0, hubG); b.geometry.translate(0, 0.95, 0); b.rotation.x = i * Math.PI / 2; b.rotation.y = 0.5; }
+  mesh(new THREE.TorusGeometry(1.95, 0.1, 6, 24), lam(GOLD), dir * 0.5, 2.5, 0, tw).rotation.y = Math.PI / 2;
+  let on = false, spin = 0, lastT = 0;
+  L.updaters.push(t => {
+    const c = (((t + ph) % period) + period) % period;
+    on = t > 0 && c < period * 0.5;
+    const warm = c > period - 0.6 ? (c - (period - 0.6)) / 0.6 : 0; // berputar dulu sebelum meniup
+    spin += Math.min(0.1, Math.max(0, t - lastT)) * (on ? 22 : 2 + warm * 16); lastT = t;
+    hubG.rotation.x = spin;
+    if (plane) { plane.material.opacity += ((on ? 0.6 : warm * 0.2) - plane.material.opacity) * 0.2; tex.offset.x = -dir * t * 2.2; }
+  });
+  const inside = e => Math.abs(e.pos.x - x) < w / 2 + 0.3 && Math.abs(e.pos.z - z) < d / 2 && e.pos.y > y - 0.5 && e.pos.y < y + 3.5;
+  L.obs.push({
+    hit(e) { if (on && inside(e)) e.wind = dir * force; },
+    avoid(e) { return on && inside(e) ? -dir : 0; },
+  });
+}
+
 // ombak: dinding rendah yang melaju ke arah pemain; lompati
 function wave(L, P, speed, off, color) {
   const m = mesh(new THREE.CapsuleGeometry(0.45, P.w - 0.9, 6, 12), lam(color, { transparent: false, emissive: 0x0a3a55 }), P.x, P.y + 0.45, 0, L.group);
@@ -1118,7 +1181,49 @@ function rising(seed) {
   return L;
 }
 
-const BUILDERS = [asgard, galaxy, olympus, tidal, muspel, hades, garden, yggdrasil, jotunheim, rising];
+// ============================================================ MAP 11: VALKYRIE SKYWAY (balapan senja)
+function skyway(seed) {
+  const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
+  L.sky = ['#2b2a6b', '#e58a9a', '#ffd9a8'];
+  L.skyFx = { cloud: 0.75, cloudCol: 0xffc9b0, stars: 0.45 };
+  L.cloudFloor = -30;
+  L.spawn = { y: 0, z: 2 };
+  L.addPlat(0, 0, 0, 16, 14, { theme: 'grass', rock: true });
+  // ladang bumper
+  L.addPlat(0, 0, 22, 12, 30, { rock: true });
+  [[-3, 12], [3, 12], [0, 17], [-3.5, 22], [3.5, 22], [0, 27], [-2.5, 32], [2.5, 32]].forEach(([x, z], i) => bumper(L, x, 0, z, 0.9, 6, [0xff5fa2, 0x4dc3ff, 0xffc36b][i % 3]));
+  // jembatan angin
+  L.addPlat(0, 0, 52, 7.5, 26, { theme: 'wood', rim: GOLD, h: 0.8 });
+  fan(L, 0, 0, 45.5, 7.5, 7, 1, 4.6, 3.2, 0);
+  fan(L, 0, 0, 58.5, 7.5, 7, -1, 4.6, 3.2, 1.6);
+  L.addPlat(0, 0, 70, 9, 6, { theme: 'grass', rock: true });
+  pad(L, 0, 0, 71.6, 3.2, 20);
+  // teras atas: palang + jalur percepatan
+  L.addPlat(0, 5, 81.5, 12, 11, { rock: true });
+  spinner(L, 0, 5, 80, 5, 2.4, 0, 0x9b5cff);
+  boost(L, 0, 5, 82.5, 4, 7);
+  // awan melayang
+  const cl = { color: 0xffffff, rim: 0xffc9b0, h: 0.8 };
+  mover(L, L.addPlat(0, 5.6, 90.5, 5, 4, cl), 3, 0, 1.0, 0);
+  L.addPlat(0, 6.2, 96.5, 5, 4, cl);
+  mover(L, L.addPlat(0, 6.8, 102.5, 5, 4, cl), -3, 0, 1.0, 1.2);
+  L.addPlat(0, 7.5, 111.5, 14, 12, { rock: true });
+  bumper(L, -3.2, 7.5, 109, 0.9, 7, 0xffc36b); bumper(L, 3.2, 7.5, 109, 0.9, 7, 0xffc36b);
+  arch(g, 114, 7.5, 5.8, GOLD, true);
+  L.cps = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 35 }, { x: 0, y: 0, z: 70 }, { x: 0, y: 5, z: 78 }];
+  L.wps = [{ x: 0, z: 6, w: 5 }, { x: 0, z: 36, w: 4 }, { x: 0, z: 41, w: 1.5 }, { x: 0, z: 46, w: 1 }, { x: 0, z: 52, w: 1 }, { x: 0, z: 58, w: 1 }, { x: 0, z: 64, w: 1.2 },
+    { x: 0, z: 69.5, w: 2 }, { x: 0, z: 71.6, w: 2 }, { x: 0, z: 85.5, w: 3.5 }, { x: 0, z: 90.5, w: 0.8 }, { x: 0, z: 96.5, w: 1 }, { x: 0, z: 102.5, w: 0.8 }, { x: 0, z: 119, w: 4 }];
+  L.finish = e => e.pos.z >= 114 && e.pos.y > 7;
+  for (let i = 0; i < 12; i++) tower(g, (i % 2 ? 1 : -1) * (50 + rnd() * 70), -30 + rnd() * 30, -10 + rnd() * 180, 1 + rnd() * 1.6);
+  if (!put(g, 'palace', 0, 2, 172, 2.4, 2.4, 2.4)) tower(g, 0, -4, 160, 4);
+  for (let i = 0; i < 11; i++) decoIsland(g, (i % 2 ? 1 : -1) * (15 + rnd() * 26), -6 + i * 0.8 + rnd() * 8, -5 + i * 12 + rnd() * 8, 3 + rnd() * 3, rnd);
+  for (let i = 0; i < 22; i++) cloud(g, (rnd() - 0.5) * 170, -20 + rnd() * 16, -20 + rnd() * 180, 3 + rnd() * 4, 0xffe1d0);
+  birds(L, 14, 0, 26, 70, 44, 0x3a2a5a, 0.9);
+  return L;
+}
+
+const BUILDERS = [asgard, galaxy, olympus, tidal, muspel, hades, garden, yggdrasil, jotunheim, rising, skyway];
 export function buildLevel(idx, seed) {
   const L = BUILDERS[idx % BUILDERS.length](seed || 1);
   animateEnv(L);

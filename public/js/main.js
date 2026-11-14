@@ -58,8 +58,8 @@ function tuneQuality(dt) {
   if (quality.n < 45) return;
   const avg = quality.acc / quality.n;
   quality.acc = 0; quality.n = 0;
-  const minS = quality.mode === 'auto' ? 0.7 : 0.6;
-  if (avg > 1 / 50) {
+  const minS = quality.mode === 'auto' ? 0.7 : 0.6, tg = opts.cap30 ? 2 : 1; // hemat baterai: target 30 fps
+  if (avg > tg / 50) {
     const lo = Math.max(minS, quality.floorMin);
     if (quality.lastAvg) { quality.futile = avg > quality.lastAvg * 0.93 ? quality.futile + 1 : 0; quality.lastAvg = 0; }
     if (quality.futile >= 2) {
@@ -70,11 +70,11 @@ function tuneQuality(dt) {
     } else if (quality.scale > lo + 0.01) {
       // di bawah 50 fps: kurangi resolusi dulu
       quality.lastAvg = avg;
-      quality.scale = Math.max(lo, quality.scale - (avg > 1 / 35 ? 0.15 : 0.07));
+      quality.scale = Math.max(lo, quality.scale - (avg > tg / 35 ? 0.15 : 0.07));
       quality.cool = quality.hold; quality.hold = Math.min(45, quality.hold * 1.6);
       setRes();
       report('res scale -> ' + quality.scale.toFixed(2) + ' (avg ms ' + (avg * 1000).toFixed(1) + ')');
-    } else if (quality.mode === 'auto' && quality.level > 0 && avg > (quality.level === 1 ? 1 / 30 : 1 / 42) && ++quality.slow >= 2) {
+    } else if (quality.mode === 'auto' && quality.level > 0 && avg > (quality.level === 1 ? tg / 30 : tg / 42) && ++quality.slow >= 2) {
       // mode otomatis: resolusi sudah mentok dan masih berat -> matikan bayangan, lalu resolusi rendah
       quality.slow = 0; quality.scale = Math.max(quality.floorMin, quality.level > 1 ? 0.85 : 1); quality.cool = 8; quality.lastAvg = 0; quality.futile = 0;
       applyQuality(quality.level > 1 ? 1 : 0);
@@ -82,7 +82,7 @@ function tuneQuality(dt) {
     }
   } else {
     quality.slow = 0;
-    if (avg < 1 / 57 && quality.scale < 1 && quality.cool <= 0) { quality.scale = Math.min(1, quality.scale + 0.05); quality.cool = 2; setRes(); }
+    if (avg < tg / 57 && quality.scale < 1 && quality.cool <= 0) { quality.scale = Math.min(1, quality.scale + 0.05); quality.cool = 2; setRes(); }
   }
 }
 
@@ -210,15 +210,19 @@ function disposeTree(o) {
 }
 
 // ------------------------------------------------------------ audio
-let actx = null, master = null, muted = false;
+let actx = null, master = null, musicBus = null, sfxBus = null, bus = null, muted = false;
 try { muted = localStorage.getItem('asg_mute') === '1'; } catch { /* */ }
 function initAudio() {
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
     actx.resume();
-    if (!master) { master = actx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(actx.destination); }
+    if (!master) {
+      master = actx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(actx.destination);
+      musicBus = actx.createGain(); sfxBus = actx.createGain(); musicBus.connect(master); sfxBus.connect(master); bus = sfxBus; setVolumes();
+    }
   } catch { /* tanpa suara */ }
 }
+function setVolumes() { if (musicBus) { musicBus.gain.value = opts.mv ?? 1; sfxBus.gain.value = opts.sv ?? 1; } }
 function setMuted(m) {
   muted = m;
   try { localStorage.setItem('asg_mute', m ? '1' : '0'); } catch { /* */ }
@@ -232,7 +236,7 @@ function beep(freq, dur = 0.12, type = 'square', vol = 0.06, slide = 0) {
     o.type = type; o.frequency.setValueAtTime(freq, t);
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t + dur);
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g).connect(master);
+    o.connect(g).connect(bus || master);
     o.start(t); o.stop(t + dur);
   } catch { /* abaikan */ }
 }
@@ -249,6 +253,7 @@ const music = {
     if (this.timer) return;
     this.timer = setInterval(() => {
       if (!actx || muted || document.hidden) return;
+      bus = musicBus; // nada musik lewat bus musik (volume terpisah dari efek)
       const s = this.step++, n = f => this.root * Math.pow(2, f / 12);
       const deg = this.pat[s % 8], oct = (s % 16) >= 8 ? 12 : 0;
       beep(n(this.scale[deg] + oct), 0.16, 'triangle', 0.028);
@@ -258,6 +263,7 @@ const music = {
       if (s % 2 === 1) noise(0.03, 0.012, 'highpass', 6000);              // hi-hat
       if (s % 8 === 4) noise(0.08, 0.025, 'bandpass', 1800);              // snare
       if (s % 16 === 0) { beep(n(this.scale[0]), 1.1, 'sine', 0.014); beep(n(this.scale[2]), 1.1, 'sine', 0.012); } // pad
+      bus = sfxBus;
     }, 150);
   },
 };
@@ -271,7 +277,7 @@ function noise(dur = 0.2, vol = 0.06, type = 'lowpass', f0 = 800, f1 = 0) {
     src.buffer = noiseBuf; src.loop = true; f.type = type; f.frequency.setValueAtTime(f0, t);
     if (f1) f.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f).connect(g).connect(master);
+    src.connect(f).connect(g).connect(bus || master);
     src.start(t, Math.random() * 0.5); src.stop(t + dur);
   } catch { /* abaikan */ }
 }
@@ -287,11 +293,11 @@ function ambience(kind) {
     const src = actx.createBufferSource(), f = actx.createBiquadFilter(), g = actx.createGain(), lfo = actx.createOscillator(), lg = actx.createGain();
     src.buffer = noiseBuf; src.loop = true; f.type = cfg[0]; f.frequency.value = cfg[1]; g.gain.value = cfg[2];
     lfo.frequency.value = cfg[3]; lg.gain.value = cfg[2] * 0.6; lfo.connect(lg).connect(g.gain);
-    src.connect(f).connect(g).connect(master); src.start(); lfo.start();
+    src.connect(f).connect(g).connect(sfxBus || master); src.start(); lfo.start();
     ambNode = { src, g, lfo };
   } catch { /* abaikan */ }
 }
-const AMB_SOUND = { 0: 'wind', 1: 'space', 2: 'wind', 3: 'sea', 4: 'lava', 5: 'cave', 6: 'wind', 7: 'wind', 8: 'wind', 9: 'sea', plaza: 'wind' };
+const AMB_SOUND = { 0: 'wind', 1: 'space', 2: 'wind', 3: 'sea', 4: 'lava', 5: 'cave', 6: 'wind', 7: 'wind', 8: 'wind', 9: 'sea', 10: 'wind', plaza: 'wind' };
 const SFX = {
   jump: () => { beep(420, 0.14, 'triangle', 0.06, 300); noise(0.1, 0.03, 'highpass', 1200); },
   dive: () => { noise(0.28, 0.07, 'bandpass', 500, 1800); beep(300, 0.18, 'sawtooth', 0.03, -150); },
@@ -384,7 +390,7 @@ const ambPts = new THREE.Points(ambGeo, new THREE.PointsMaterial({ map: dotTex, 
 ambPts.frustumCulled = false; ambPts.visible = false; scene.add(ambPts);
 const AMBIENT = {
   0: [0xfff2b0, 0.6, 0.3], 2: [0xffe9a8, 0.7, 0.3], 3: [0xffffff, 1.3, 0.24], 4: [0xff8a2b, 2.4, 0.3], 5: [0x7dffc0, 1.1, 0.3],
-  6: [0xfff2b0, 0.5, 0.3], 7: [0x8ee06a, -1.1, 0.42], 8: [0xffffff, -2.4, 0.3], plaza: [0xfff2b0, 0.5, 0.3],
+  6: [0xfff2b0, 0.5, 0.3], 7: [0x8ee06a, -1.1, 0.42], 8: [0xffffff, -2.4, 0.3], 10: [0xffd9b0, 0.5, 0.3], plaza: [0xfff2b0, 0.5, 0.3],
 };
 function setAmbient(key) {
   const a = AMBIENT[key];
@@ -459,7 +465,45 @@ const G = {
 };
 try { G.god = localStorage.getItem('asg_god') || G.god; $('name').value = localStorage.getItem('asg_name') || ''; } catch { /* private mode */ }
 // koin & kostum (disimpan di perangkat)
-const save = { coins: 0, owned: ['default'], skin: 'default', xp: 0, games: 0, wins: 0, qual: 0, tut: 0 };
+const save = { coins: 0, owned: ['default'], skin: 'default', xp: 0, games: 0, wins: 0, qual: 0, tut: 0, trail: 'asli', ownedT: ['asli'], best: {}, q: null };
+// jejak terjang (kosmetik): warna partikel saat menerjang dan melompat
+const TRAILS = [
+  { id: 'asli', name: 'Asli', cost: 0 },
+  { id: 'emas', name: 'Emas', cost: 80, cols: [0xffd23a, 0xfff2b0, 0xffffff] },
+  { id: 'api', name: 'Api', cost: 100, cols: [0xff7a1a, 0xffd23a, 0xff3b30] },
+  { id: 'es', name: 'Es', cost: 100, cols: [0x9fe3ff, 0xffffff, 0x4dc3ff] },
+  { id: 'alam', name: 'Alam', cost: 120, cols: [0x8ee06a, 0xd9ffb0, 0x3f9b4b] },
+  { id: 'pelangi', name: 'Pelangi', cost: 200, cols: [0xff4d4d, 0xffe14d, 0x5fe07a, 0x4dc3ff, 0xc05cff] },
+  { id: 'bintang', name: 'Bintang', cost: 0, lvl: 7, cols: [0xffffff, 0xc9a6ff, 0x7de3ff] },
+];
+const fmtT = sec => sec.toFixed(1) + ' dtk';
+// misi harian: tiga misi per hari, hadiah koin
+const QUESTS = { games: ['Main %d game', 2, 30], qual: ['Lolos %d ronde', 3, 40], ab: ['Pakai kekuatan dewa %d kali', 5, 30], dive: ['Menerjang %d kali', 15, 30], cp: ['Lewati %d checkpoint', 6, 35], win: ['Menangkan %d final', 1, 60] };
+function ensureQuests() {
+  const d = new Date(), day = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  if (save.q && save.q.day === day && Array.isArray(save.q.list)) return;
+  const keys = Object.keys(QUESTS); let h = 0;
+  for (const c of day) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const start = h % keys.length, step = (h >> 4) % 2 ? 1 : 5;
+  save.q = { day, list: [0, 1, 2].map(i => ({ k: keys[(start + i * step) % keys.length], have: 0 })) };
+  persist();
+}
+function renderQuests() {
+  ensureQuests();
+  $('quests').innerHTML = '<b class="qt">Misi hari ini</b>' + save.q.list.map(q => {
+    const [txt, need, coin] = QUESTS[q.k] || ['?', 1, 0];
+    return `<div class="${q.done ? 'done' : ''}"><i style="width:${Math.min(100, q.have / need * 100)}%"></i><span>${q.done ? '✅ ' : ''}${txt.replace('%d', need)}</span><span>${q.done ? 'selesai' : Math.min(q.have, need) + '/' + need + ' · 🪙' + coin}</span></div>`;
+  }).join('');
+}
+function quest(k, n = 1) {
+  ensureQuests();
+  const q = save.q.list.find(x => x.k === k);
+  if (!q || q.done) return;
+  const [txt, need, coin] = QUESTS[k];
+  q.have += n;
+  if (q.have >= need) { q.done = true; feed(`🎯 Misi selesai: ${txt.replace('%d', need)} (+${coin} 🪙)`); beep(880, 0.2, 'triangle', 0.09, 440); addCoins(coin); }
+  persist(); renderQuests();
+}
 const levelOf = xp => Math.floor(Math.sqrt(xp / 60)) + 1;
 function renderProfile() {
   const lv = levelOf(save.xp), a = (lv - 1) * (lv - 1) * 60, b = lv * lv * 60;
@@ -467,11 +511,15 @@ function renderProfile() {
 }
 try { Object.assign(save, JSON.parse(localStorage.getItem('asg_save') || '{}')); } catch { /* */ }
 if (!SKINS.some(s => s.id === save.skin) || !save.owned.includes(save.skin)) save.skin = 'default';
+if (!Array.isArray(save.ownedT)) save.ownedT = ['asli'];
+if (!save.best || typeof save.best !== 'object') save.best = {};
+if (!TRAILS.some(x => x.id === save.trail) || !save.ownedT.includes(save.trail)) save.trail = 'asli';
 function persist() { try { localStorage.setItem('asg_save', JSON.stringify(save)); } catch { /* */ } }
 function addCoins(n) { save.coins += n; persist(); renderSkins(); }
 function addXp(n) { const before = levelOf(save.xp); save.xp += n; persist(); renderProfile(); renderSkins(); if (levelOf(save.xp) > before) { feed(`⭐ Naik ke Level ${levelOf(save.xp)}!`); SFX.win(); } }
 function renderSkins() {
   $('coins').textContent = '🪙 ' + save.coins + ' koin';
+  renderTrails();
   const el = $('skins');
   el.innerHTML = '';
   for (const s of SKINS) {
@@ -488,6 +536,27 @@ function renderSkins() {
         save.coins -= s.cost; save.owned.push(s.id); beep(880, 0.2, 'triangle', 0.09, 440);
       }
       save.skin = s.id; $('err').textContent = ''; persist(); renderSkins(); buildPreview();
+    };
+    el.appendChild(b);
+  }
+}
+function renderTrails() {
+  const el = $('trails');
+  el.innerHTML = '';
+  for (const tr of TRAILS) {
+    const locked = tr.lvl && levelOf(save.xp) < tr.lvl;
+    if (tr.lvl && !locked && !save.ownedT.includes(tr.id)) save.ownedT.push(tr.id);
+    const own = save.ownedT.includes(tr.id), b = document.createElement('button'), hx = c => '#' + c.toString(16).padStart(6, '0');
+    const bg = tr.cols ? `linear-gradient(135deg,${tr.cols.map(hx).join(',')})` : godColor(G.god);
+    b.className = 'god' + (tr.id === save.trail ? ' sel' : '');
+    b.innerHTML = `<i style="background:${bg}"></i>${tr.name}<small>${locked ? '🔒 Lv ' + tr.lvl : own ? (tr.id === save.trail ? 'dipakai' : 'punya') : '🪙 ' + tr.cost}</small>`;
+    b.onclick = () => {
+      if (locked) { $('err').textContent = `Jejak ${tr.name} terbuka di Level ${tr.lvl}.`; return; }
+      if (!own) {
+        if (save.coins < tr.cost) { $('err').textContent = `Koin belum cukup untuk jejak ${tr.name} (butuh ${tr.cost}).`; beep(200, 0.15, 'sawtooth'); return; }
+        save.coins -= tr.cost; save.ownedT.push(tr.id); beep(880, 0.2, 'triangle', 0.09, 440);
+      }
+      save.trail = tr.id; $('err').textContent = ''; persist(); renderSkins();
     };
     el.appendChild(b);
   }
@@ -580,6 +649,7 @@ function renderGods() {
 renderGods();
 renderSkins();
 renderProfile();
+renderQuests();
 
 let ws = null;
 function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
@@ -617,7 +687,7 @@ $('leaveBtn').onclick = () => { G.leaving = true; if (ws) ws.close(); };
 $('muteBtn').onclick = () => { initAudio(); setMuted(!muted); };
 $('muteBtn').textContent = muted ? '🔇' : '🔊';
 // pengaturan (tersimpan di perangkat)
-const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH, ts: 1 };
+const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH, ts: 1, mv: 1, sv: 1, cap30: false, fps: false };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('asg_opts') || '{}')); } catch { /* */ }
 function applyOpts() {
   if (quality.mode !== opts.q || !quality.inited) {
@@ -627,6 +697,8 @@ function applyOpts() {
     applyQuality({ auto: 3, high: 3, med: 2, low: 0 }[opts.q] ?? 3);
   }
   document.documentElement.style.setProperty('--ts', opts.ts); $('optT').value = opts.ts;
+  $('optMV').value = opts.mv; $('optSV').value = opts.sv; $('optC').checked = !!opts.cap30; $('optF').checked = !!opts.fps;
+  $('fps').classList.toggle('hidden', !opts.fps); setVolumes();
   $('optQ').value = opts.q; $('optS').value = opts.sens; $('optI').checked = !!opts.invert; $('optA').checked = !!opts.autoCam;
   try { localStorage.setItem('asg_opts', JSON.stringify(opts)); } catch { /* */ }
 }
@@ -637,6 +709,10 @@ $('optS').oninput = e => { opts.sens = +e.target.value || 1; applyOpts(); };
 $('optI').onchange = e => { opts.invert = e.target.checked; applyOpts(); };
 $('optA').onchange = e => { opts.autoCam = e.target.checked; applyOpts(); };
 $('optT').oninput = e => { opts.ts = +e.target.value || 1; applyOpts(); };
+$('optMV').oninput = e => { opts.mv = +e.target.value; applyOpts(); };
+$('optSV').oninput = e => { opts.sv = +e.target.value; applyOpts(); beep(660, 0.08); };
+$('optC').onchange = e => { opts.cap30 = e.target.checked; quality.acc = quality.n = 0; quality.lastAvg = 0; applyOpts(); };
+$('optF').onchange = e => { opts.fps = e.target.checked; applyOpts(); };
 $('fsBtn').onclick = () => {
   const el = document.documentElement, on = document.fullscreenElement || document.webkitFullscreenElement;
   try { if (on) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (el.requestFullscreen || el.webkitRequestFullscreen).call(el); }
@@ -674,7 +750,7 @@ function renderLobby() {
 function connect(name) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
   ws.onerror = () => { $('err').textContent = 'Tidak bisa terhubung ke server game. Pastikan server masih berjalan.'; };
-  ws.onopen = () => { const code = G.code || $('code').value.trim(); send({ t: 'join', name, god: G.god, skin: save.skin, mode: G.mode === 'solo' ? 'solo' : (G.create || code) ? 'room' : 'lan', code, create: !!G.create }); G.create = false; ping(); };
+  ws.onopen = () => { const code = G.code || $('code').value.trim(); send({ t: 'join', name, god: G.god, skin: save.skin, trail: save.trail, mode: G.mode === 'solo' ? 'solo' : (G.create || code) ? 'room' : 'lan', code, create: !!G.create }); G.create = false; ping(); };
   ws.onmessage = ev => {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
@@ -732,7 +808,16 @@ const ON = {
     const e = G.ents.get(m.id);
     G.fin = m.n;
     if (e) { burst(e.pos, CONFETTI, 36, 10); for (const sx of [-5, 5]) burst(tmpV.set(e.pos.x + sx, e.pos.y + 1, e.pos.z), CONFETTI, 18, 12); ring(e.pos, 0xffe07a, 5); if (m.id !== G.me) SFX.cheer(); deactivate(e); }
-    if (m.id === G.me) { flash('LOLOS!', 1800); SFX.win(); }
+    if (m.id === G.me) {
+      const R = G.round, lv = R ? (R.level ?? R.idx) : -1;
+      if (R && (R.type === 'race' || R.type === 'final') && LEVELS[lv]) {
+        // rekor waktu pribadi per map
+        const sec = Math.max(0, (serverNow() - R.startAt) / 1000), old = save.best[lv];
+        flash('LOLOS! ' + fmtT(sec), 2000);
+        if (!old || sec < old) { save.best[lv] = Math.round(sec * 10) / 10; persist(); feed(`🏅 Rekor baru di ${LEVELS[lv].name}: ${fmtT(sec)}` + (old ? ` (sebelumnya ${fmtT(old)})` : '')); }
+      } else flash('LOLOS!', 1800);
+      SFX.win();
+    }
     feed(`✅ ${nameOf(m.id)} lolos (${m.n}/${m.Q})`);
   },
   dead(m) {
@@ -771,6 +856,7 @@ const ON = {
       if (applyArea(a, c.pos.x, c.pos.y, c.pos.z, e) && e.id === G.me) { feed(`⚡ Kamu kena ${a.name} dari ${c.name}!`); if (a.area === 'confuse') flash('KONTROL TERBALIK!', 1500); if (navigator.vibrate) navigator.vibrate(80); }
     }
   },
+  emo(m) { const e = G.ents.get(m.id); if (e && e.active) showEmo(e, m.k); },
   roundEnd(m) {
     G.roundOver = true; G.outcome = new Set(m.qualified);
     const was = G.round && G.round.contenders.includes(G.me), iq = m.qualified.includes(G.me);
@@ -784,11 +870,12 @@ const ON = {
       const gain = 5 + (iq ? 15 : 0) + (m.final && m.winner === G.me ? 60 : 0);
       addCoins(gain);
       save.games += m.over ? 1 : 0; if (iq) save.qual++; if (m.final && m.winner === G.me) save.wins++;
+      if (m.over) quest('games'); if (iq) quest('qual'); if (m.final && m.winner === G.me) quest('win');
       addXp(10 + (iq ? 25 : 0) + (m.final && m.winner === G.me ? 100 : 0));
       if (navigator.vibrate) navigator.vibrate(iq ? [30, 40, 30] : 120);
       $('endNames').innerHTML += `<br><b style="color:#ffd866">+${gain} 🪙 koin</b>`;
     }
-    if (m.over && m.standings && m.standings.length) $('endNames').innerHTML += '<table>' + m.standings.map((s, i) => `<tr class="${s.id === G.me ? 'me' : ''}"><td>${i + 1}.</td><td>${esc(s.name)}</td><td>${s.pts} poin</td></tr>`).join('') + '</table>';
+    if (m.over && m.standings && m.standings.length) $('endNames').innerHTML += '<table>' + m.standings.map((s, i) => `<tr class="${s.id === G.me ? 'me' : ''}"><td>${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'}</td><td>${esc(s.name)}</td><td>${s.pts} poin</td></tr>`).join('') + '</table>';
     G.celebrate = m.final && m.winner ? G.ents.get(m.winner) : null;
     if (G.celebrate) { G.celebrate.model.visible = true; cam.dist = 6; }
     $('end').classList.remove('hidden'); $('card').classList.add('hidden'); $('big').textContent = '';
@@ -820,6 +907,25 @@ function makeLabel(text, mine) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false }));
   s.scale.set(2.6, 0.65, 1); s.renderOrder = 10;
   return s;
+}
+
+// stiker emoji di atas kepala
+const EMOS = ['🎉', '💃', '👋', '😂', '😡', '😱', '👍', '😀'], emoTex = {};
+function showEmo(e, k) {
+  const ch = EMOS[k] || EMOS[0];
+  if (!emoTex[ch]) {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const x = c.getContext('2d');
+    x.fillStyle = 'rgba(255,255,255,0.95)'; x.strokeStyle = '#2a1e4a'; x.lineWidth = 6;
+    x.beginPath(); x.arc(64, 58, 50, 0, 7); x.fill(); x.stroke();
+    x.beginPath(); x.moveTo(50, 104); x.lineTo(64, 124); x.lineTo(78, 104); x.fill();
+    x.font = '62px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(ch, 64, 62);
+    emoTex[ch] = new THREE.CanvasTexture(c); emoTex[ch].colorSpace = THREE.SRGBColorSpace;
+  }
+  if (!e.bubble) { e.bubble = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, fog: false })); e.bubble.renderOrder = 11; e.model.add(e.bubble); }
+  e.bubble.material.map = emoTex[ch]; e.bubble.material.needsUpdate = true; emoTex[ch].needsUpdate = true;
+  e.bubble.visible = true; e.bubbleT = 2.2;
+  if (e.id !== G.me) beep(980, 0.06, 'sine', 0.03);
 }
 
 function deactivate(e) {
@@ -857,7 +963,7 @@ function startRound(m) {
 const LIGHTS = {
   def: [0xfff4dc, 2.3, 0xffffff, 0x9a8fc0, 1.55],
   1: [0xb9a6ff, 1.7, 0x7a6cff, 0x2a0a4a, 1.35], 2: [0xffd9a0, 2.6, 0xffe6c4, 0xb08a70, 1.5], 3: [0xffffff, 2.4, 0xcfffff, 0x3a8aa0, 1.6],
-  4: [0xffa060, 2.1, 0xff8a50, 0x4a0d08, 1.3], 5: [0x8affc8, 1.6, 0x7a5cd0, 0x0e3a2a, 1.3], 7: [0xfff2c0, 2.3, 0xd9ffe0, 0x4a7a3a, 1.55], 8: [0xeaf6ff, 2.3, 0xdff1ff, 0x7fa8c8, 1.75],
+  4: [0xffa060, 2.1, 0xff8a50, 0x4a0d08, 1.3], 5: [0x8affc8, 1.6, 0x7a5cd0, 0x0e3a2a, 1.3], 7: [0xfff2c0, 2.3, 0xd9ffe0, 0x4a7a3a, 1.55], 8: [0xeaf6ff, 2.3, 0xdff1ff, 0x7fa8c8, 1.75], 10: [0xffb890, 2.4, 0xffc9d8, 0x6a4a8a, 1.45],
 };
 function setLights(key) {
   const l = LIGHTS[key] || LIGHTS.def;
@@ -891,7 +997,7 @@ function addEnt(id, i, n) {
     label.position.y = 2.4; e.model.add(label);
     e.shadow = new THREE.Mesh(shGeo, shMat); e.shadow.rotation.x = -Math.PI / 2;
     scene.add(e.model, e.shadow);
-    e.net = new THREE.Vector3(); e.netVel = new THREE.Vector3(); e.netYaw = 0; e.got = false;
+    e.net = new THREE.Vector3(); e.netVel = new THREE.Vector3(); e.netYaw = 0; e.got = false; e.trail = info.trail;
     spawnAt(e, L, i, n);
     e.net.copy(e.pos);
     G.ents.set(id, e);
@@ -923,9 +1029,10 @@ function startRoundUI(m, lv, n) {
   const info = LEVELS[lv];
   $('rname').textContent = `Ronde ${m.idx + 1}/${m.total} · ${info.name}`;
   $('goal').textContent = info.goal;
-  $('cardSub').textContent = `Ronde ${m.idx + 1} — ${info.sub}`;
+  $('cardSub').textContent = `${{ race: '🏁', survival: '🛡️', final: '👑', collect: '🍎' }[m.type] || ''} Ronde ${m.idx + 1} — ${info.sub}`;
   $('cardName').textContent = info.name;
-  $('cardGoal').textContent = info.goal + (m.type === 'final' ? '' : m.type === 'race' || m.type === 'collect' ? ` (${m.Q} tercepat lolos)` : n > m.Q ? ` (${m.Q} terakhir lolos)` : '');
+  $('cardGoal').innerHTML = esc(info.goal + (m.type === 'final' ? '' : m.type === 'race' || m.type === 'collect' ? ` (${m.Q} tercepat lolos)` : n > m.Q ? ` (${m.Q} terakhir lolos)` : ''))
+    + (save.best[lv] ? `<span class="rec">🏅 Rekormu: ${fmtT(save.best[lv])}</span>` : '');
   $('card').classList.remove('hidden');
   $('help').classList.toggle('hidden', IS_TOUCH);
   $('touch').classList.toggle('hidden', !IS_TOUCH);
@@ -964,6 +1071,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyR') emoteQ = 5;
   if (e.code === 'Digit1') emoteQ = 8;
   if (e.code === 'Digit2') emoteQ = 9;
+  if (/^Digit[3-6]$/.test(e.code)) send({ t: 'emo', k: +e.code.slice(5) });
   if (e.code.startsWith('Arrow')) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -1010,6 +1118,8 @@ $('btnDive').addEventListener('pointerdown', e => { diveQ = true; e.preventDefau
 $('btnAb').addEventListener('pointerdown', e => { abQ = true; e.preventDefault(); });
 let emoteCycle = 0;
 $('btnEmote').addEventListener('pointerdown', e => { emoteQ = [5, 8, 9][emoteCycle++ % 3]; e.preventDefault(); });
+let emoCycle = 0;
+$('btnEmo').addEventListener('pointerdown', e => { send({ t: 'emo', k: 3 + (emoCycle++ % 5) }); e.preventDefault(); });
 
 const inp = { x: 0, z: 0, jump: false, dive: false };
 const NOINP = { x: 0, z: 0, jump: false, dive: false };
@@ -1049,13 +1159,14 @@ function tickGame(dt, now) {
         const a = ABILITIES[e.god] || ABILITIES.zeus;
         if (a.self) castSelf(e); else e.abCd = AB_CD;
         send({ t: 'ab', id: e.id });
+        if (mine) quest('ab');
       }
       if (mine) abQ = false;
       stepEnt(e, i, dt, L, t);
-      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); ring(e.pos, 0xffe07a, 3); burst(e.pos, [0xffe07a, 0xffffff], 10, 4, FX_RISE); }
+      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); quest('cp'); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); ring(e.pos, 0xffe07a, 3); burst(e.pos, [0xffe07a, 0xffffff], 10, 4, FX_RISE); }
       if (e.speedT > 0 && e.grounded) burst(e.pos, [0x7fe6ff, 0xffffff], 1, 1.5, FX_GLOW);
       if (e.anim === 1 && (e.stepAcc = (e.stepAcc || 0) + dt * Math.hypot(e.vel.x, e.vel.z)) > 1.7) { e.stepAcc = 0; SFX.step(); }
-      if (emoteQ) { e.emoteT = emoteQ === 5 ? 1.6 : 2.6; e.emoteK = emoteQ === true ? 5 : emoteQ; emoteQ = false; }
+      if (emoteQ) { e.emoteT = emoteQ === 5 ? 1.6 : 2.6; e.emoteK = emoteQ === true ? 5 : emoteQ; if (mine) send({ t: 'emo', k: { 8: 1, 9: 2 }[emoteQ] || 0 }); emoteQ = false; }
       e.emoteT = (e.emoteT || 0) - dt;
       if (e.emoteT > 0 && e.anim === 0) e.anim = e.emoteK || 5;
       separate(e, list);
@@ -1072,7 +1183,7 @@ function tickGame(dt, now) {
         if (e.fx === 'jump') { if (mine) { SFX.jump(); jumpBuf = 0; } burst(e.pos, [0xffffff], 4, 2.5); e.sq = 1.28; }
         else if (e.fx === 'land') { e.sq = 0.74; burst(e.pos, [0xffffff, 0xf2efe6], 6, 2.6, FX_DUST); ring(e.pos, 0xffffff, 1.3); if (mine) { SFX.land(); cam.dip = 0.25; } }
         else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { SFX.hit(); cam.shake = 0.45; if (navigator.vibrate) navigator.vibrate(60); } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); burst(e.pos, [0xfff2b0, 0xffffff], 8, 9, FX_SPARK); ring(e.pos, 0xffe07a, 2); }
-        else if (e.fx === 'dive' && mine) SFX.dive();
+        else if (e.fx === 'dive' && mine) { SFX.dive(); quest('dive'); }
         else if (e.fx === 'block') { ring(e.pos, 0xb9a6ff, 1.6); if (mine) beep(900, 0.08, 'sine', 0.06); }
         else if (e.fx === 'respawn') { if (mine) SFX.respawn(); burst(e.pos, [0x9ff0ff, 0xffffff], 14, 3, FX_RISE); ring(e.pos, 0x9ff0ff, 2.2); bolts(e.pos, 0.2, 1, 0x9ff0ff); }
         e.fx = null;
@@ -1094,6 +1205,11 @@ function tickGame(dt, now) {
     // kilat putih sesaat ketika terpental
     if (e.flashT > 0 || e.flashOn) { e.flashT = (e.flashT || 0) - dt; const on = e.flashT > 0; if (on !== e.flashOn) { e.flashOn = on; e.model.traverse(n => { if (n.isSkinnedMesh && n.material.emissive) n.material.emissive.setScalar(on ? 0.55 : 0); }); } }
     e.prevAnim = e.anim;
+    if (e.bubbleT > 0) {
+      e.bubbleT -= dt;
+      const k = Math.min(1, (2.2 - e.bubbleT) * 9) * Math.min(1, e.bubbleT * 5);
+      e.bubble.scale.setScalar(1.25 * (0.3 + 0.7 * k)); e.bubble.position.y = 3.3 + Math.sin(tt * 5) * 0.06; e.bubble.visible = e.bubbleT > 0;
+    }
     if (e.auraT > 0) {
       e.auraT -= dt;
       if (!e.aura) { e.aura = makeAura(); e.aura.position.y = 0.9; e.model.add(e.aura); }
@@ -1104,7 +1220,8 @@ function tickGame(dt, now) {
     e.model.scale.set(sx, e.sq, sx);
     if (e.anim === 1 && (e.dustT = (e.dustT || 0) + dt) > 0.16) { e.dustT = 0; burst(e.pos, [0xffffff], 1, 1.2, FX_DUST); }
     // jejak cahaya saat menerjang (warna jubah dewa)
-    if (e.anim === 3 && !e.far && (e.trailT = (e.trailT || 0) + dt) > 0.035) { e.trailT = 0; burst(e.pos, [e.trailCol || (e.trailCol = godColor(e.god)), 0xffffff], 1, 0.8, FX_TRAIL); }
+    const tr = e.trailDef === undefined ? (e.trailDef = TRAILS.find(x => x.id === e.trail && x.cols) || null) : e.trailDef;
+    if (!e.far && (e.anim === 3 || (tr && e.anim === 2)) && (e.trailT = (e.trailT || 0) + dt) > (e.anim === 3 ? 0.035 : 0.07)) { e.trailT = 0; burst(e.pos, tr ? tr.cols : [e.trailCol || (e.trailCol = godColor(e.god)), 0xffffff], 1, 0.8, FX_TRAIL); }
     // data gerak untuk animasi (pemain lain: diperkirakan dari perubahan posisi)
     const ax = e.ax || (e.ax = { x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, vy: 0, speed: 0, turn: 0 });
     const inv = 1 / Math.max(dt, 0.001), ka = Math.min(1, dt * 12);
@@ -1282,13 +1399,16 @@ function tickMenu(dt, now) {
   camera.lookAt(wide ? 2.2 : 0, wide ? 0.9 : portrait ? -0.9 : -0.4, 0);
 }
 
-let last = performance.now();
+let last = performance.now(), fpsAcc = 0, fpsN = 0;
 function frame(now) {
   if (testDone) return;
   requestAnimationFrame(frame);
+  if (opts.cap30 && now - last < 31) return; // hemat baterai: lewati tiap frame kedua
   frameCount++;
   renderer.shadowMap.needsUpdate = frameCount % (IS_TOUCH ? 3 : 2) === 0;
   perf.acc += now - last; perf.n++;
+  fpsAcc += now - last; fpsN++;
+  if (fpsAcc > 500) { if (opts.fps) $('fps').textContent = Math.round(1000 * fpsN / fpsAcc) + ' fps · ' + Math.round(renderer.getPixelRatio() * 100) + '%'; fpsAcc = fpsN = 0; }
   const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
   last = now;
   if ((G.phase === 'play' || G.phase === 'lobby') && G.L && G.round) tickGame(dt, now); else { tickMenu(dt, now); if (now > 4000) tuneQuality(dt); }
@@ -1319,6 +1439,7 @@ const perf = { acc: 0, n: 0 };
 if (QS.has('shot')) setInterval(() => (report(`hb frames=${frameCount} calls=${renderer.info.render.calls} tris=${renderer.info.render.triangles} ms=${perf.n ? (perf.acc / perf.n).toFixed(1) : '-'} q=${quality.level} vis=${document.visibilityState} phase=${G.phase}`), perf.acc = perf.n = 0), 5000);
 const shot = { on: QS.has('shot'), every: (+QS.get('shot') || 4) * 1000, next: 2500, n: 0 };
 $('loadFill').style.width = '35%';
+{ const TIPS = ['Terjang ke arah lawan untuk membuatnya terpental.', 'Tiap dewa punya kekuatan berbeda. Coba semuanya!', 'Di map es, mulailah berbelok lebih awal.', 'Kipas angin berputar dulu sebelum meniup: lewati saat ia diam.', 'Selesaikan misi harian untuk koin tambahan.', 'Lompat lalu terjang di udara untuk menjangkau lebih jauh.', 'Bumper memantulkanmu jauh. Lewati celahnya, jangan ditabrak.']; $('loadTip').textContent = '💡 ' + TIPS[(Math.random() * TIPS.length) | 0]; }
 Promise.allSettled([loadGodAssets().then(r => { $('loadFill').style.width = '70%'; return r; }), loadProps()]).then(rs => {
   $('loadFill').style.width = '100%'; setTimeout(() => $('loading').classList.add('done'), 250);
   if (rs.some(r => r.status !== 'fulfilled')) $('loadTxt').textContent = 'Sebagian aset gagal dimuat — game tetap jalan dengan tampilan sederhana.'; report('assets ' + rs.map(r => r.status + (r.reason ? ' ' + (r.reason.stack || r.reason) : '')).join(' | ')); makePortraits(); renderGods(); if (G.me) renderLobby(); if (G.phase === 'menu') buildPreview(); });

@@ -227,11 +227,21 @@
   #loadFill { border-radius:10px; background:linear-gradient(rgba(255,255,255,.6),rgba(255,255,255,0) 50%),linear-gradient(#ffe58a,#f2a93b); }
   #vig { background:radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(30,16,60,.3) 100%); }
   @media (max-height:520px) { .crest { display:none; } .panel { padding-top:16px; } }
+  #quests { margin:0 0 10px; display:grid; gap:5px; }
+  #quests div { position:relative; overflow:hidden; background:#f1ebfa; border:1.5px solid #ded5ee; border-radius:11px; padding:6px 10px; font-size:12.5px; display:flex; justify-content:space-between; gap:8px; }
+  #quests div i { position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg,rgba(242,193,78,.45),rgba(255,229,138,.45)); z-index:0; }
+  #quests div span { position:relative; z-index:1; } #quests div.done { border-color:var(--gold); opacity:.75; }
+  #quests b.qt { font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--indigo); opacity:.85; }
+  #fps { position:fixed; z-index:4; left:max(8px,env(safe-area-inset-left)); bottom:6px; font-size:11px; color:#fff; background:rgba(34,24,66,.7); border-radius:8px; padding:2px 7px; pointer-events:none; font-variant-numeric:tabular-nums; }
+  #loadTip { max-width:min(80vw,380px); text-align:center; font-size:13px; opacity:.92; text-shadow:0 2px 0 rgba(42,30,74,.5); min-height:34px; }
+  #btnEmo { right:calc(max(20px,env(safe-area-inset-right)) + 164px); bottom:calc(max(22px,env(safe-area-inset-bottom)) + 84px); width:52px; height:52px; font-size:22px; background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.75),rgba(255,255,255,.3)); }
+  body.inlobby #btnEmo { display:flex; }
+  #card .rec { display:block; margin-top:6px; font-size:13px; color:var(--gold2); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="loading"><svg class="crest" viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3c4"/><stop offset="1" stop-color="#f2a93b"/></linearGradient><radialGradient id="cb" cx=".5" cy=".35" r=".7"><stop offset="0" stop-color="#6a4fd0"/><stop offset="1" stop-color="#2a1e4a"/></radialGradient></defs><circle cx="60" cy="60" r="44" fill="url(#cb)" stroke="url(#cg)" stroke-width="6"/><g fill="url(#cg)"><ellipse cx="22" cy="78" rx="6" ry="13" transform="rotate(-35 22 78)"/><ellipse cx="14" cy="58" rx="6" ry="13" transform="rotate(-8 14 58)"/><ellipse cx="18" cy="37" rx="6" ry="13" transform="rotate(22 18 37)"/><ellipse cx="98" cy="78" rx="6" ry="13" transform="rotate(35 98 78)"/><ellipse cx="106" cy="58" rx="6" ry="13" transform="rotate(8 106 58)"/><ellipse cx="102" cy="37" rx="6" ry="13" transform="rotate(-22 102 37)"/></g><path d="M68 22 40 64h17l-7 34 31-46H63z" fill="#ffe58a" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg><h1>ASGARDIAN</h1><div id="loadBar"><div id="loadFill"></div></div><div id="loadTxt">Memuat para dewa...</div></div>
+<div id="loading"><svg class="crest" viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3c4"/><stop offset="1" stop-color="#f2a93b"/></linearGradient><radialGradient id="cb" cx=".5" cy=".35" r=".7"><stop offset="0" stop-color="#6a4fd0"/><stop offset="1" stop-color="#2a1e4a"/></radialGradient></defs><circle cx="60" cy="60" r="44" fill="url(#cb)" stroke="url(#cg)" stroke-width="6"/><g fill="url(#cg)"><ellipse cx="22" cy="78" rx="6" ry="13" transform="rotate(-35 22 78)"/><ellipse cx="14" cy="58" rx="6" ry="13" transform="rotate(-8 14 58)"/><ellipse cx="18" cy="37" rx="6" ry="13" transform="rotate(22 18 37)"/><ellipse cx="98" cy="78" rx="6" ry="13" transform="rotate(35 98 78)"/><ellipse cx="106" cy="58" rx="6" ry="13" transform="rotate(8 106 58)"/><ellipse cx="102" cy="37" rx="6" ry="13" transform="rotate(-22 102 37)"/></g><path d="M68 22 40 64h17l-7 34 31-46H63z" fill="#ffe58a" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg><h1>ASGARDIAN</h1><div id="loadBar"><div id="loadFill"></div></div><div id="loadTxt">Memuat para dewa...</div><div id="loadTip"></div></div>
 
 <button id="muteBtn" title="Suara">🔊</button>
 <button id="setBtn" title="Pengaturan">⚙️</button>
@@ -243,10 +253,15 @@
   <div class="row"><span>Balik kamera atas-bawah</span><input id="optI" type="checkbox"></div>
   <div class="row"><span>Kamera otomatis mengikuti</span><input id="optA" type="checkbox"></div>
   <div class="row"><span>Ukuran tombol sentuh</span><input id="optT" type="range" min="0.7" max="1.4" step="0.05" value="1"></div>
+  <div class="row"><span>Volume musik</span><input id="optMV" type="range" min="0" max="1" step="0.05" value="1"></div>
+  <div class="row"><span>Volume efek</span><input id="optSV" type="range" min="0" max="1" step="0.05" value="1"></div>
+  <div class="row"><span>Hemat baterai (30 fps)</span><input id="optC" type="checkbox"></div>
+  <div class="row"><span>Tampilkan fps</span><input id="optF" type="checkbox"></div>
   <button id="fsBtn" class="btn" style="font-size:15px;padding:8px">LAYAR PENUH</button>
 </div>
 <div id="vig"></div><div class="bar" id="barT"></div><div class="bar" id="barB"></div>
 <div id="feed"></div>
+<div id="fps" class="hidden"></div>
 <div id="rotate">📱 Putar HP ke posisi mendatar supaya lebih enak dimainkan</div>
 
 <div id="mode" class="screen">
@@ -266,6 +281,7 @@
     <h1 style="font-size:26px" id="menuTitle">ASGARDIAN</h1>
     <div class="tag" id="menuTag">Party Royale Para Dewa ⚡</div>
     <div id="profile"></div>
+    <div id="quests"></div>
     <label for="name">Nama kamu</label>
     <input id="name" type="text" maxlength="14" placeholder="Nama dewa-mu" autocomplete="off">
     <label>Pilih dewa</label>
@@ -273,6 +289,8 @@
     <div id="power"></div>
     <label>Kostum <span id="coins" style="float:right;text-transform:none"></span></label>
     <div id="skins" class="gods"></div>
+    <label>Jejak terjang</label>
+    <div id="trails" class="gods"></div>
     <div id="roomRow" class="row" style="gap:6px"><input id="code" type="text" maxlength="4" placeholder="Kode room (opsional)" autocomplete="off" style="margin:0;text-transform:uppercase;font-size:15px"><button id="createBtn" class="btn" style="font-size:13px;padding:10px 8px;width:auto;white-space:nowrap">BUAT ROOM</button></div>
     <button id="joinBtn" class="btn">MASUK ARENA</button>
     <div id="err"></div>
@@ -309,10 +327,11 @@
   <div id="card" class="hidden"><small id="cardSub"></small><b id="cardName"></b><span id="cardGoal"></span></div>
   <div id="end" class="hidden"><small id="endSmall"></small><h2 id="endTitle"></h2><div class="you" id="endYou"></div><div class="names" id="endNames"></div></div>
   <div id="spec" class="hidden"><span class="pill" id="specTxt"></span></div>
-  <div id="help" class="pill">WASD gerak · Spasi lompat · Shift terjang · Q kekuatan dewa · R sorak · 1 menari · 2 melambai · Drag mouse putar kamera</div>
+  <div id="help" class="pill">WASD gerak · Spasi lompat · Shift terjang · Q kekuatan dewa · R sorak · 1 menari · 2 melambai · 3–6 stiker · Drag mouse putar kamera</div>
   <div id="touch" class="hidden">
     <div id="joy"><div id="knob"></div></div>
     <button id="btnEmote" class="tbtn">🙌</button>
+    <button id="btnEmo" class="tbtn">😀</button>
     <button id="btnAb" class="tbtn">KEKUATAN</button>
     <button id="btnDive" class="tbtn">TERJANG</button>
     <button id="btnJump" class="tbtn">LOMPAT</button>

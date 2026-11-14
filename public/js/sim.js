@@ -81,6 +81,7 @@ export function stepEnt(e, inp, dt, L, t) {
   }
   e.vel.y = Math.max(-40, e.vel.y - L.gravity * (e.floatT > 0 && e.vel.y < 0 ? 0.22 : 1) * dt);
   e.pos.addScaledVector(e.vel, dt);
+  if (e.wind) { e.pos.x += e.wind * dt; e.wind = 0; } // tiupan kipas (lihat fan() di levels.js)
   if (e.ground && !e.ground.off) { e.pos.x += e.ground.dx; e.pos.y += e.ground.dy; e.pos.z += e.ground.dz; }
 
   e.grounded = false; e.ground = null;

@@ -61,8 +61,9 @@ const MAPS = [
   { type: 'final', limit: 150 },     // 7 Yggdrasil Climb
   { type: 'race', limit: 130 },      // 8 Jotunheim Slide
   { type: 'survival', limit: 85 },   // 9 Tidal Rise
+  { type: 'race', limit: 130 },      // 10 Valkyrie Skyway
 ];
-const POOLS = [[0, 3, 4, 6, 8], [1, 5, 9], [2, 7]];       // ronde 1: balapan, ronde 2: bertahan, ronde 3: final
+const POOLS = [[0, 3, 4, 6, 8, 10], [1, 5, 9], [2, 7]];       // ronde 1: balapan, ronde 2: bertahan, ronde 3: final
 const wins = new Map();              // nama -> jumlah mahkota
 const GOD_IDS = ['zeus', 'poseidon', 'athena', 'hades', 'apollo', 'ares', 'hermes', 'thor', 'loki', 'odin'];
 const INTRO_MS = 6000;
@@ -105,7 +106,7 @@ function createRoom(roomId, opts = {}) {
     const s = JSON.stringify(m);
     for (const p of players.values()) if (p.ws && p.ws.readyState === 1) p.ws.send(s);
   }
-  function roster() { return [...players.values()].map(p => ({ id: p.id, name: p.name, god: p.god, skin: p.skin || 'default', bot: !!p.bot, wins: wins.get(p.name) || 0 })); }
+  function roster() { return [...players.values()].map(p => ({ id: p.id, name: p.name, god: p.god, skin: p.skin || 'default', trail: p.trail || 'asli', bot: !!p.bot, wins: wins.get(p.name) || 0 })); }
   function lobbyMsg() { broadcast({ t: 'lobby', players: roster(), hostId, botCount, phase, diff }); }
   function humans() { return [...players.values()].filter(p => !p.bot); }
   function later(fn, ms) {
@@ -306,13 +307,19 @@ function createRoom(roomId, opts = {}) {
       const name = String(m.name || '').replace(/[<>&"]/g, '').trim().slice(0, 14) || 'Dewa ' + id.slice(1);
       const god = GOD_IDS.includes(m.god) ? m.god : 'zeus';
       const skin = ['default', 'es', 'mawar', 'laut', 'api', 'bayangan', 'emas', 'kerajaan', 'legenda'].includes(m.skin) ? m.skin : 'default';
-      players.set(id, { id, name, god, skin, bot: false, ws, state: null });
+      const trail = ['asli', 'emas', 'api', 'es', 'alam', 'pelangi', 'bintang'].includes(m.trail) ? m.trail : 'asli';
+      players.set(id, { id, name, god, skin, trail, bot: false, ws, state: null });
       ws.pid = id;
       if (!hostId || !players.has(hostId)) hostId = id;
       send(ws, { t: 'welcome', id, addrs: opts.solo ? [] : lanAddrs(), mode: opts.solo ? 'solo' : 'lan', code: opts.code || null });
       lobbyMsg();
     },
     ping(ws, m) { send(ws, { t: 'pong', c: m.c, s: Date.now() }); },
+    emo(ws, m) { // stiker emoji di atas kepala (maksimal satu per 0,8 detik)
+      const p = players.get(ws.pid), now = Date.now();
+      if (!p || now - (p.emoAt || 0) < 800) return;
+      p.emoAt = now; broadcast({ t: 'emo', id: p.id, k: Math.max(0, Math.min(7, m.k | 0)) });
+    },
     bots(ws, m) {
       if (ws.pid !== hostId || phase !== 'lobby') return;
       botCount = Math.max(opts.solo ? 1 : 0, Math.min(11, m.n | 0));

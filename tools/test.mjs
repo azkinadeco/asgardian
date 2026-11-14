@@ -85,6 +85,13 @@ try {
   const re = solo.find('roundEnd');
   check(re && Array.isArray(re.standings) && re.standings.length > 0, 'akhir ronde mengirim papan skor');
   check(solo.got.some(m => m.t === 'snap' && m.e.some(x => x[0][0] === 'b')), 'server menyiarkan posisi bot');
+  const t1 = client({ name: 'T1', mode: 'room', create: true, trail: 'api' }); await sleep(400);
+  const t2 = client({ name: 'T2', mode: 'room', code: t1.find('welcome')?.code, trail: 'curang' }); await sleep(400);
+  const ros = t2.got.filter(m => m.t === 'lobby').pop()?.players || [];
+  check(ros.find(p => p.name === 'T1')?.trail === 'api' && ros.find(p => p.name === 'T2')?.trail === 'asli', 'jejak terjang ikut di daftar pemain, nilai tak dikenal ditolak');
+  t1.send({ t: 'emo', k: 4 }); t1.send({ t: 'emo', k: 5 }); await sleep(300);
+  check(t2.got.filter(m => m.t === 'emo').length === 1 && t2.find('emo').k === 4, 'stiker emoji diteruskan ke pemain lain dan dibatasi lajunya');
+  t1.ws.close(); t2.ws.close();
   for (const x of [a, b, c, lan, solo]) x.ws.close();
 } catch (e) { check(false, 'tes server melempar error: ' + e.message); }
 srv.kill();
