@@ -16,7 +16,7 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 ## Struktur
 - `server.js` — server file + WebSocket: lobby, ronde, simulasi bot, kekuatan dewa, apel emas.
 - `public/js/sim.js` — fisika karakter, AI bot, kekuatan dewa (dipakai browser dan server).
-- `public/js/levels.js` — 11 map, pulau lobby, dan rintangannya.
+- `public/js/levels.js` — 12 map, pulau lobby, dan rintangannya.
 - `public/js/gods.js`, `props.js` — karakter dan aset dekorasi.
 - `public/js/merge.js` — penggabung geometri (dipakai map dan karakter).
 - `public/js/main.js` — render, kontrol, UI, jaringan di sisi pemain.
@@ -33,7 +33,7 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 `npm test` menjalankan simulasi bot di semua map, cek penggabungan benda diam, dan tes protokol server (room berkode, mode latihan, papan skor).
 
 ## Mode tes
-`DEBUG=1 node server.js`, lalu buka `http://localhost:3000/?auto=1&level=N` untuk langsung masuk ke map nomor N (0–10).
+`DEBUG=1 node server.js`, lalu buka `http://localhost:3000/?auto=1&level=N` untuk langsung masuk ke map nomor N (0–11).
 Tambahkan `&shot=3&ttl=30` supaya halaman mengirim screenshot tiap 3 detik ke folder `SHOT_DIR` dan menutup dirinya setelah 30 detik; `?lineup=1` menampilkan barisan semua dewa di menu.
 
 ## Menuju APK / app

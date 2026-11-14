@@ -62,8 +62,9 @@ const MAPS = [
   { type: 'race', limit: 130 },      // 8 Jotunheim Slide
   { type: 'survival', limit: 85 },   // 9 Tidal Rise
   { type: 'race', limit: 130 },      // 10 Valkyrie Skyway
+  { type: 'final', limit: 150 },     // 11 Storm Summit
 ];
-const POOLS = [[0, 3, 4, 6, 8, 10], [1, 5, 9], [2, 7]];       // ronde 1: balapan, ronde 2: bertahan, ronde 3: final
+const POOLS = [[0, 3, 4, 6, 8, 10], [1, 5, 9], [2, 7, 11]];       // ronde 1: balapan, ronde 2: bertahan, ronde 3: final
 const wins = new Map();              // nama -> jumlah mahkota
 const GOD_IDS = ['zeus', 'poseidon', 'athena', 'hades', 'apollo', 'ares', 'hermes', 'thor', 'loki', 'odin'];
 const INTRO_MS = 6000;
@@ -168,6 +169,9 @@ function createRoom(roomId, opts = {}) {
     }
     broadcast({ t: 'round', idx, level, total: plan.length, type: def.type, startAt: round.startAt, seed: round.seed, contenders, Q, limit, players: roster(), hostId });
     later(() => endRound(), INTRO_MS + limit * 1000);
+    // beberapa bot menyapa dengan stiker saat hitung mundur
+    contenders.filter(id => (players.get(id) || {}).bot).sort(() => Math.random() - 0.5).slice(0, 3)
+      .forEach(id => later(() => { if (players.has(id)) broadcast({ t: 'emo', id, k: [7, 6, 3, 2, 0][(Math.random() * 5) | 0] }); }, 1200 + Math.random() * 4200));
   }
 
   function liveContenders() { return round.contenders.filter(id => players.has(id)); }

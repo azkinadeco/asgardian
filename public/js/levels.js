@@ -19,6 +19,7 @@ export const LEVELS = [
   { name: 'Jotunheim Slide', sub: 'Negeri Es Jotunheim', type: 'race', goal: 'Hati-hati, lantainya licin!' },
   { name: 'Tidal Rise', sub: 'Menara Karang Poseidon', type: 'survival', goal: 'Air naik! Panjat setinggi mungkin!' },
   { name: 'Valkyrie Skyway', sub: 'Jalan Langit Valkyrie', type: 'race', goal: 'Lawan angin, pantul di bumper, sampai gerbang senja!' },
+  { name: 'Storm Summit', sub: 'Puncak Badai Thor', type: 'final', goal: 'Tembus badai, rebut mahkota di puncak!' },
 ];
 
 const HAS_DOM = typeof document !== 'undefined';
@@ -171,6 +172,7 @@ const THEMES = {
   basalt: { tex: ['basalt', '#4a3f46', '#584b52', '#2c2429', '#6d3a2c'], top: 0x514449, side: 0x2e262b, brick: true, crack: '#ff7a1a' },
   wood: { tex: ['wood', '#a8743f', '#b98248', '#8a5a2b', '#96652f'], top: 0xb07a44, side: 0x7a4e26 },
   ice: { tex: ['ice', '#cfeeff', '#e6f7ff', '#a9dcf5', '#ffffff'], top: 0xd8f1ff, side: 0x8ec9ea, brick: true },
+  storm: { tex: ['storm', '#3f4660', '#4a5270', '#262b40', '#5b6a94'], top: 0x454c68, side: 0x262b40, brick: true, crack: '#8fd0ff' },
   styx: { tex: ['styx', '#4b3a78', '#5a4690', '#2d2250', '#7de3b0'], top: 0x52408a, side: 0x2d2250, brick: true, crack: '#5dffb4' },
 };
 function themeMats(theme, w, d) {
@@ -526,6 +528,7 @@ function asgard(seed) {
   // pulau Valhalla
   L.addPlat(0, 0, 103, 16, 18, { rock: true });
   spinner(L, 0, 0, 102.5, 5.5, 2.2, 0.5, 0xf2c14e);
+  powerBox(L, 0, 0, 61.5, 'shield');
   arch(g, 108, 0, 6.5, GOLD, true);
 
   L.cps = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 35 }, { x: 0, y: 0, z: 61.5 }, { x: 0, y: 0, z: 95 }];
@@ -719,6 +722,39 @@ function boost(L, x, y, z, w, d) {
   L.obs.push({ hit(e) { if (e.grounded && Math.abs(e.pos.x - x) < w / 2 && Math.abs(e.pos.z - z) < d / 2 && Math.abs(e.pos.y - y) < 0.3) e.speedT = Math.max(e.speedT, 1.0); } });
 }
 
+// lantai kedip: pijakan yang hilang-timbul secara berkala (berkedip dulu sebelum hilang)
+function blinker(L, P, period, ph, onFrac = 0.6) {
+  P.mesh.userData.dyn = true;
+  L.updaters.push(t => {
+    const c = (((t + ph) % period) + period) % period, lim = period * onFrac;
+    const off = t > 0 && c > lim, warn = t > 0 && !off && c > lim - 0.8;
+    P.off = off;
+    P.mesh.visible = !off && !(warn && Math.sin(c * 30) > 0.2);
+  });
+}
+// kotak kekuatan: sentuh untuk lari kencang atau perisai sesaat (tiap pemain punya jeda sendiri)
+function powerBox(L, x, y, z, kind) {
+  const id = (L.boxes = L.boxes || []).length, col = kind === 'shield' ? 0xb9a6ff : 0x7fe6ff;
+  const g = new THREE.Group();
+  g.position.set(x, y + 1.1, z); g.userData.dyn = true;
+  L.group.add(g);
+  mesh(new RoundedBoxGeometry(0.95, 0.95, 0.95, 2, 0.14), lam(col, { emissive: new THREE.Color(col).multiplyScalar(0.45) }), 0, 0, 0, g);
+  mesh(new THREE.OctahedronGeometry(0.3), lam(0xffffff, { emissive: 0xaaaaaa }), 0, 0, 0, g).scale.y = 1.5;
+  glow(g, 0, 0, 0, col, 3.4);
+  L.boxes.push({ g, id });
+  L.updaters.push(t => { g.rotation.y = t * 1.8 + id; g.rotation.x = Math.sin(t * 1.3 + id) * 0.3; g.position.y = y + 1.1 + Math.sin(t * 2.5 + id) * 0.15; });
+  L.obs.push({
+    hit(e, t) {
+      if (!(t > 0) || Math.abs(e.pos.y - y) > 2 || Math.hypot(e.pos.x - x, e.pos.z - z) > 1.25) return;
+      const at = e.boxAt || (e.boxAt = {});
+      if ((at[id] || 0) > t) return;
+      at[id] = t + 9;
+      if (kind === 'shield') e.shieldT = Math.max(e.shieldT, 3.5); else e.speedT = Math.max(e.speedT, 3.5);
+      e.fx = kind === 'shield' ? 'boxShield' : 'boxSpeed';
+    },
+  });
+}
+
 // bumper: tiang karet yang memantulkan siapa pun yang menyentuhnya
 function bumper(L, x, y, z, r, hw, color = 0xff5fa2) {
   const g = new THREE.Group();
@@ -884,6 +920,7 @@ function tidal(seed) {
   const stones = [39.5, 46, 52.5];
   stones.forEach((z, i) => mover(L, L.addPlat(i === 1 ? 1.5 : -1, -0.4, z, 5, 4, { theme: 'sand', h: 2.5 }), 0, 0.9, 1.3, i * 2.1));
   L.addPlat(0, 0, 59.5, 8, 6, { theme: 'sand', h: 5 });
+  powerBox(L, 0, 0, 59.5, 'speed');
   // jembatan karang
   L.addPlat(0, 0, 77, 6, 29, { theme: 'coral', h: 1 });
   spinner(L, 0, 0, 68, 2.9, 2.6, 0, 0x9b5cff);
@@ -924,6 +961,7 @@ function muspel(seed) {
   // batu tenggelam
   [36.5, 43, 49.5, 56].forEach((z, i) => mover(L, L.addPlat(0, -1.2, z, 5.5, 4, { theme: 'basalt', h: 3, rim: 0xff9d2e }), 0, 1.2, 1.1, i * 1.7));
   L.addPlat(0, 0, 62.5, 8, 5, { theme: 'basalt', h: 5, rim: 0xff9d2e });
+  powerBox(L, 0, 0, 62.5, 'shield');
   // lereng batu api
   const ramp = L.addPlat(0, 0, 77, 14, 24, { rise: 6, h: 2, color: 0x4a3f46 });
   [-4.5, 0, 4.5].forEach((x, i) => boulder(L, ramp, x, 8 + i * 1.5, rnd() * 24, 1.2, 0x5a2a1c));
@@ -1092,6 +1130,7 @@ function jotunheim(seed) {
   mover(L, L.addPlat(0, 0, 48.5, 6, 4.5, Object.assign({ h: 3 }, I)), 3, 0, 0.8, 0);
   mover(L, L.addPlat(0, 0, 55.5, 6, 4.5, Object.assign({ h: 3 }, I)), -3, 0, 0.8, 0.8);
   L.addPlat(0, 0, 63, 9, 6, Object.assign({ h: 5 }, I));
+  powerBox(L, 0, 0, 63, 'shield');
   // jembatan es + jalur percepatan
   L.addPlat(0, 0, 80, 6.5, 28, Object.assign({ h: 1 }, I));
   boost(L, 0, 0, 70, 3, 5);
@@ -1210,6 +1249,7 @@ function skyway(seed) {
   mover(L, L.addPlat(0, 6.8, 102.5, 5, 4, cl), -3, 0, 1.0, 1.2);
   L.addPlat(0, 7.5, 111.5, 14, 12, { rock: true });
   bumper(L, -3.2, 7.5, 109, 0.9, 7, 0xffc36b); bumper(L, 3.2, 7.5, 109, 0.9, 7, 0xffc36b);
+  powerBox(L, 0, 0, 38.5, 'shield');
   arch(g, 114, 7.5, 5.8, GOLD, true);
   L.cps = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 35 }, { x: 0, y: 0, z: 70 }, { x: 0, y: 5, z: 78 }];
   L.wps = [{ x: 0, z: 6, w: 5 }, { x: 0, z: 36, w: 4 }, { x: 0, z: 41, w: 1.5 }, { x: 0, z: 46, w: 1 }, { x: 0, z: 52, w: 1 }, { x: 0, z: 58, w: 1 }, { x: 0, z: 64, w: 1.2 },
@@ -1223,7 +1263,58 @@ function skyway(seed) {
   return L;
 }
 
-const BUILDERS = [asgard, galaxy, olympus, tidal, muspel, hades, garden, yggdrasil, jotunheim, rising, skyway];
+// ============================================================ MAP 12: STORM SUMMIT (final, badai)
+function summit(seed) {
+  const L = new Level(), g = L.group, rnd = rng(seed);
+  CUR = L;
+  L.sky = ['#141a3a', '#4a5a9a', '#b9c9ee'];
+  L.skyFx = { cloud: 0.95, cloudCol: 0x4a5378, stars: 0.15 };
+  L.fog = [110, 420];
+  L.cloudFloor = -28;
+  L.spawn = { y: 0, z: 1 };
+  const S = { theme: 'ice', rim: 0xc9d2e0 };
+  L.addPlat(0, 0, 0, 16, 12, { theme: 'storm', rock: true, rim: 0xc9d2e0 });
+  // dataran petir
+  L.addPlat(0, 0, 20, 14, 26, { theme: 'storm', rim: 0xc9d2e0, h: 2 });
+  [[-3.5, 11], [3.5, 11], [0, 15], [-4, 20], [4, 20], [0, 24], [-3, 29], [3, 29]].forEach(([x, z], i) => lightning(L, x, 0, z, 2.5, 3.2, i * 0.55, 0x9fd8ff, 0xffffff));
+  powerBox(L, 0, 0, 19.5, 'shield');
+  // lantai kedip menanjak
+  // gelombang nyala bergerak maju: pijakan berikutnya menyala sedetik setelah yang sebelumnya
+  [37.5, 43.5, 49.5, 55.5].forEach((z, i) => blinker(L, L.addPlat(0, 0.6 * (i + 1), z, 6, 5, Object.assign({ h: 0.8 }, S)), 4.6, -i * 1.0, 0.66));
+  L.addPlat(0, 3, 62.5, 10, 7, { theme: 'storm', rock: true, rim: 0xc9d2e0 });
+  // lereng batu
+  const ramp = L.addPlat(0, 3, 76, 9, 18, { rise: 4, h: 2, color: 0x4a4f63 });
+  [-2.5, 2.5].forEach((x, i) => boulder(L, ramp, x, 7.5 + i * 1.5, rnd() * 18, 1.1, 0x7a8196));
+  // teras badai: palang, bumper, kotak kekuatan
+  L.addPlat(0, 7, 91, 12, 10, { theme: 'storm', rock: true, rim: 0xc9d2e0 });
+  spinner(L, 0, 7, 91, 5, 2.5, 0, 0x4dc3ff);
+  bumper(L, -4.2, 7, 94.5, 0.8, 6, 0x9fd8ff); bumper(L, 4.2, 7, 94.5, 0.8, 6, 0x9fd8ff);
+  powerBox(L, 0, 7, 87.5, 'speed');
+  const cl = { color: 0xdfe6f5, rim: 0x9fb0d8, h: 0.8 };
+  mover(L, L.addPlat(0, 7.6, 99.5, 5, 5, cl), 3, 0, 1.0, 0);
+  mover(L, L.addPlat(0, 8.2, 105.5, 5, 5, cl), -3, 0, 1.0, 1.2);
+  L.addPlat(0, 9, 114, 12, 10, { theme: 'storm', rock: true, rim: GOLD });
+  const crown = new THREE.Group();
+  crown.position.set(0, 10.4, 115.5);
+  mesh(new THREE.TorusGeometry(0.8, 0.14, 8, 24), lam(GOLD, { emissive: 0xb07a00 }), 0, 0, 0, crown).rotation.x = Math.PI / 2;
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; mesh(new THREE.ConeGeometry(0.14, 0.45, 5), lam(0x9fd8ff, { emissive: 0x1a5a8a }), Math.cos(a) * 0.8, 0.25, Math.sin(a) * 0.8, crown); }
+  glow(crown, 0, 0.1, 0, 0xffe07a, 5);
+  g.add(crown); L.crown = crown; crown.userData.dyn = true;
+  L.updaters.push(t => { crown.rotation.y = t * 2; if (!L.crownTaken) crown.position.y = 10.4 + Math.sin(t * 3) * 0.15; });
+  for (const sd of [-1, 1]) column(g, sd * 5, 9, 117.5, 6);
+  L.cps = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 31 }, { x: 0, y: 3, z: 62.5 }, { x: 0, y: 7, z: 88 }];
+  L.wps = [{ x: 0, z: 6, w: 6 }, { x: 0, z: 32, w: 5 }, { x: 0, z: 37.5, w: 1.5 }, { x: 0, z: 43.5, w: 1.5 }, { x: 0, z: 49.5, w: 1.5 }, { x: 0, z: 55.5, w: 1.5 },
+    { x: 0, z: 62.5, w: 3 }, { x: 0, z: 84.5, w: 3 }, { x: 0, z: 95, w: 2.5 }, { x: 0, z: 99.5, w: 0.8 }, { x: 0, z: 105.5, w: 0.8 }, { x: 0, z: 115.5, w: 0 }];
+  L.finish = e => Math.hypot(e.pos.x, e.pos.y + 0.8 - 10.4, e.pos.z - 115.5) < 2;
+  // puncak-puncak gunung badai & awan gelap
+  for (let i = 0; i < 9; i++) mesh(new THREE.ConeGeometry(22 + rnd() * 18, 70 + rnd() * 50, 6), lam(0x3a4160, { flatShading: true }), (i % 2 ? 1 : -1) * (55 + rnd() * 60), -25, rnd() * 190 - 10, g);
+  mesh(new THREE.ConeGeometry(40, 120, 7), lam(0x333a58, { flatShading: true }), 0, -62, 150, g);
+  for (let i = 0; i < 9; i++) decoIsland(g, (i % 2 ? 1 : -1) * (14 + rnd() * 20), -6 + i * 1.2 + rnd() * 5, -4 + i * 13 + rnd() * 6, 2.5 + rnd() * 2.5, rnd, { top: 0x7a8196, rock: 0x4a4f63, item: 'crystal', itemColor: 0x9fd8ff, scale: 0.6 });
+  for (let i = 0; i < 24; i++) cloud(g, (rnd() - 0.5) * 180, 22 + rnd() * 20, -20 + rnd() * 190, 5 + rnd() * 5, 0x5a6388);
+  return L;
+}
+
+const BUILDERS = [asgard, galaxy, olympus, tidal, muspel, hades, garden, yggdrasil, jotunheim, rising, skyway, summit];
 export function buildLevel(idx, seed) {
   const L = BUILDERS[idx % BUILDERS.length](seed || 1);
   animateEnv(L);

@@ -237,6 +237,13 @@
   #btnEmo { right:calc(max(20px,env(safe-area-inset-right)) + 164px); bottom:calc(max(22px,env(safe-area-inset-bottom)) + 84px); width:52px; height:52px; font-size:22px; background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.75),rgba(255,255,255,.3)); }
   body.inlobby #btnEmo { display:flex; }
   #card .rec { display:block; margin-top:6px; font-size:13px; color:var(--gold2); }
+  #spec { display:flex; justify-content:center; align-items:center; gap:8px; } #spec.hidden { display:none !important; }
+  .sbtn { pointer-events:auto; width:40px; height:40px; border-radius:50%; font-size:16px; color:#fff; cursor:pointer; touch-action:manipulation;
+    background:linear-gradient(180deg,rgba(64,46,128,.9),rgba(34,24,66,.9)); border:1.5px solid rgba(242,193,78,.6); box-shadow:0 3px 0 rgba(20,12,44,.45); }
+  @media (pointer:coarse) { #spec { bottom:auto; top:104px; } }
+  #achList { display:grid; gap:4px; margin-top:6px; } #achList div { display:flex; justify-content:space-between; gap:8px; font-size:12.5px; opacity:.6; }
+  #achList div.got { opacity:1; } #achList div.got b { color:var(--gold3); }
+  #end .sum { display:block; margin-top:6px; font-size:12.5px; opacity:.85; }
 </style>
 </head>
 <body>
@@ -282,6 +289,7 @@
     <div class="tag" id="menuTag">Party Royale Para Dewa ⚡</div>
     <div id="profile"></div>
     <div id="quests"></div>
+    <details id="achBox"><summary id="achSum">Pencapaian</summary><div id="achList"></div></details>
     <label for="name">Nama kamu</label>
     <input id="name" type="text" maxlength="14" placeholder="Nama dewa-mu" autocomplete="off">
     <label>Pilih dewa</label>
@@ -326,8 +334,8 @@
   <div id="big"></div>
   <div id="card" class="hidden"><small id="cardSub"></small><b id="cardName"></b><span id="cardGoal"></span></div>
   <div id="end" class="hidden"><small id="endSmall"></small><h2 id="endTitle"></h2><div class="you" id="endYou"></div><div class="names" id="endNames"></div></div>
-  <div id="spec" class="hidden"><span class="pill" id="specTxt"></span></div>
-  <div id="help" class="pill">WASD gerak · Spasi lompat · Shift terjang · Q kekuatan dewa · R sorak · 1 menari · 2 melambai · 3–6 stiker · Drag mouse putar kamera</div>
+  <div id="spec" class="hidden"><button id="specPrev" class="sbtn">◀</button><span class="pill" id="specTxt"></span><button id="specNext" class="sbtn">▶</button></div>
+  <div id="help" class="pill">WASD gerak · Spasi lompat · Shift terjang · Q kekuatan dewa · R sorak · 1 menari · 2 melambai · 3–6 stiker · Drag mouse putar kamera · gamepad didukung</div>
   <div id="touch" class="hidden">
     <div id="joy"><div id="knob"></div></div>
     <button id="btnEmote" class="tbtn">🙌</button>

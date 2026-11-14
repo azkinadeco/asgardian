@@ -297,7 +297,7 @@ function ambience(kind) {
     ambNode = { src, g, lfo };
   } catch { /* abaikan */ }
 }
-const AMB_SOUND = { 0: 'wind', 1: 'space', 2: 'wind', 3: 'sea', 4: 'lava', 5: 'cave', 6: 'wind', 7: 'wind', 8: 'wind', 9: 'sea', 10: 'wind', plaza: 'wind' };
+const AMB_SOUND = { 0: 'wind', 1: 'space', 2: 'wind', 3: 'sea', 4: 'lava', 5: 'cave', 6: 'wind', 7: 'wind', 8: 'wind', 9: 'sea', 10: 'wind', 11: 'wind', plaza: 'wind' };
 const SFX = {
   jump: () => { beep(420, 0.14, 'triangle', 0.06, 300); noise(0.1, 0.03, 'highpass', 1200); },
   dive: () => { noise(0.28, 0.07, 'bandpass', 500, 1800); beep(300, 0.18, 'sawtooth', 0.03, -150); },
@@ -390,7 +390,7 @@ const ambPts = new THREE.Points(ambGeo, new THREE.PointsMaterial({ map: dotTex, 
 ambPts.frustumCulled = false; ambPts.visible = false; scene.add(ambPts);
 const AMBIENT = {
   0: [0xfff2b0, 0.6, 0.3], 2: [0xffe9a8, 0.7, 0.3], 3: [0xffffff, 1.3, 0.24], 4: [0xff8a2b, 2.4, 0.3], 5: [0x7dffc0, 1.1, 0.3],
-  6: [0xfff2b0, 0.5, 0.3], 7: [0x8ee06a, -1.1, 0.42], 8: [0xffffff, -2.4, 0.3], 10: [0xffd9b0, 0.5, 0.3], plaza: [0xfff2b0, 0.5, 0.3],
+  6: [0xfff2b0, 0.5, 0.3], 7: [0x8ee06a, -1.1, 0.42], 8: [0xffffff, -2.4, 0.3], 10: [0xffd9b0, 0.5, 0.3], 11: [0xcfe0ff, -9, 0.16], plaza: [0xfff2b0, 0.5, 0.3],
 };
 function setAmbient(key) {
   const a = AMBIENT[key];
@@ -496,6 +496,7 @@ function renderQuests() {
   }).join('');
 }
 function quest(k, n = 1) {
+  save.st = save.st || {}; save.st[k] = (save.st[k] || 0) + n; // statistik seumur hidup (untuk pencapaian)
   ensureQuests();
   const q = save.q.list.find(x => x.k === k);
   if (!q || q.done) return;
@@ -505,6 +506,33 @@ function quest(k, n = 1) {
   persist(); renderQuests();
 }
 const levelOf = xp => Math.floor(Math.sqrt(xp / 60)) + 1;
+// pencapaian: target jangka panjang, hadiah koin sekali saja
+const ACH = [
+  ['mulai', 'Langkah Pertama', 'Selesaikan 1 game', s => s.games >= 1, 20],
+  ['juara', 'Juara', 'Menangkan 1 final', s => s.wins >= 1, 50],
+  ['lolos20', 'Sulit Dijatuhkan', 'Lolos 20 ronde', s => s.qual >= 20, 100],
+  ['veteran', 'Veteran Arena', 'Main 25 game', s => s.games >= 25, 150],
+  ['dewa', 'Dewa Tertinggi', 'Menangkan 10 final', s => s.wins >= 10, 200],
+  ['terjang', 'Penerjang', 'Menerjang 100 kali', s => (s.st.dive || 0) >= 100, 60],
+  ['sakti', 'Sakti', 'Pakai kekuatan dewa 50 kali', s => (s.st.ab || 0) >= 50, 60],
+  ['rekor', 'Pemecah Rekor', 'Punya rekor waktu di 3 map', s => Object.keys(s.best).length >= 3, 60],
+  ['gaya', 'Penuh Gaya', 'Miliki 4 kostum', s => s.owned.length >= 4, 80],
+  ['lv5', 'Naik Daun', 'Capai Level 5', s => levelOf(s.xp) >= 5, 100],
+];
+function checkAch(silent) {
+  save.st = save.st || {}; save.ach = Array.isArray(save.ach) ? save.ach : [];
+  let gain = 0;
+  for (const [id, name, , test, coin] of ACH) {
+    if (save.ach.includes(id)) continue;
+    let ok = false; try { ok = test(save); } catch { /* */ }
+    if (!ok) continue;
+    save.ach.push(id); gain += coin;
+    if (!silent) feed(`🏆 Pencapaian: ${name} (+${coin} 🪙)`);
+  }
+  $('achSum').textContent = `Pencapaian (${save.ach.length}/${ACH.length})`;
+  $('achList').innerHTML = ACH.map(([id, name, desc, , coin]) => `<div class="${save.ach.includes(id) ? 'got' : ''}"><span><b>${save.ach.includes(id) ? '🏆' : '🔒'} ${name}</b> — ${desc}</span><span>🪙${coin}</span></div>`).join('');
+  if (gain) { if (!silent) SFX.win(); addCoins(gain); }
+}
 function renderProfile() {
   const lv = levelOf(save.xp), a = (lv - 1) * (lv - 1) * 60, b = lv * lv * 60;
   $('profile').innerHTML = `<b>Level ${lv}</b> · 👑 ${save.wins} menang · ${save.qual} kali lolos · ${save.games} game<div id="xpBar"><i style="width:${Math.round((save.xp - a) / (b - a) * 100)}%"></i></div>`;
@@ -650,6 +678,7 @@ renderGods();
 renderSkins();
 renderProfile();
 renderQuests();
+checkAch();
 
 let ws = null;
 function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
@@ -871,6 +900,9 @@ const ON = {
       addCoins(gain);
       save.games += m.over ? 1 : 0; if (iq) save.qual++; if (m.final && m.winner === G.me) save.wins++;
       if (m.over) quest('games'); if (iq) quest('qual'); if (m.final && m.winner === G.me) quest('win');
+      checkAch();
+      const rs = G.rstat || {};
+      $('endNames').innerHTML += `<span class="sum">Ronde ini kamu: jatuh ${rs.falls || 0}× · terpental ${rs.hits || 0}× · menerjang ${rs.dives || 0}×</span>`;
       addXp(10 + (iq ? 25 : 0) + (m.final && m.winner === G.me ? 100 : 0));
       if (navigator.vibrate) navigator.vibrate(iq ? [30, 40, 30] : 120);
       $('endNames').innerHTML += `<br><b style="color:#ffd866">+${gain} 🪙 koin</b>`;
@@ -952,7 +984,7 @@ function startRound(m) {
   prepLevel(L);
   const n = m.contenders.length;
   m.contenders.forEach((id, i) => addEnt(id, i, n));
-  G.round = m; G.roundOver = false; G.fin = 0; G.alive = n; G.lastCount = 99; G.apples = 0; G.hintI = 0;
+  G.round = m; G.roundOver = false; G.fin = 0; G.alive = n; G.lastCount = 99; G.apples = 0; G.hintI = 0; G.rstat = { falls: 0, hits: 0, dives: 0 };
   music.setMood(lv); setAmbient(lv === 9 ? 3 : lv); setLights(lv === 9 ? 3 : lv); ambience(AMB_SOUND[lv]);
   G.phase = 'play';
   cam.yaw = 0; cam.pitch = 0.42; cam.init = false;
@@ -963,7 +995,7 @@ function startRound(m) {
 const LIGHTS = {
   def: [0xfff4dc, 2.3, 0xffffff, 0x9a8fc0, 1.55],
   1: [0xb9a6ff, 1.7, 0x7a6cff, 0x2a0a4a, 1.35], 2: [0xffd9a0, 2.6, 0xffe6c4, 0xb08a70, 1.5], 3: [0xffffff, 2.4, 0xcfffff, 0x3a8aa0, 1.6],
-  4: [0xffa060, 2.1, 0xff8a50, 0x4a0d08, 1.3], 5: [0x8affc8, 1.6, 0x7a5cd0, 0x0e3a2a, 1.3], 7: [0xfff2c0, 2.3, 0xd9ffe0, 0x4a7a3a, 1.55], 8: [0xeaf6ff, 2.3, 0xdff1ff, 0x7fa8c8, 1.75], 10: [0xffb890, 2.4, 0xffc9d8, 0x6a4a8a, 1.45],
+  4: [0xffa060, 2.1, 0xff8a50, 0x4a0d08, 1.3], 5: [0x8affc8, 1.6, 0x7a5cd0, 0x0e3a2a, 1.3], 7: [0xfff2c0, 2.3, 0xd9ffe0, 0x4a7a3a, 1.55], 8: [0xeaf6ff, 2.3, 0xdff1ff, 0x7fa8c8, 1.75], 10: [0xffb890, 2.4, 0xffc9d8, 0x6a4a8a, 1.45], 11: [0xc9d8ff, 2.0, 0x9fb0e8, 0x2a3050, 1.4],
 };
 function setLights(key) {
   const l = LIGHTS[key] || LIGHTS.def;
@@ -1123,9 +1155,30 @@ $('btnEmo').addEventListener('pointerdown', e => { send({ t: 'emo', k: 3 + (emoC
 
 const inp = { x: 0, z: 0, jump: false, dive: false };
 const NOINP = { x: 0, z: 0, jump: false, dive: false };
+$('specPrev').onclick = () => { specIdx--; };
+$('specNext').onclick = () => { specIdx++; };
+// gamepad: stik kiri gerak, stik kanan kamera, A lompat, X/B terjang, Y kekuatan, LB sorak, RB stiker
+const pad = { x: 0, y: 0, prev: [] };
+function pollPad(dt) {
+  pad.x = pad.y = 0;
+  if (!navigator.getGamepads) return;
+  let gp = null;
+  try { for (const g of navigator.getGamepads()) if (g && g.connected) { gp = g; break; } } catch { return; }
+  if (!gp) return;
+  const dz = v => (Math.abs(v) < 0.18 ? 0 : v), ax = gp.axes, down = i => !!(gp.buttons[i] && gp.buttons[i].pressed), hit = i => down(i) && !pad.prev[i];
+  pad.x = dz(ax[0] || 0) + (down(15) ? 1 : 0) - (down(14) ? 1 : 0); pad.y = -dz(ax[1] || 0) + (down(12) ? 1 : 0) - (down(13) ? 1 : 0);
+  const rx = dz(ax[2] || 0), ry = dz(ax[3] || 0);
+  if (rx || ry) { cam.lastDrag = performance.now(); cam.yaw -= rx * 2.6 * dt * opts.sens; cam.pitch = Math.max(0.08, Math.min(1.2, cam.pitch + ry * 1.6 * dt * opts.sens * (opts.invert ? -1 : 1))); }
+  if (hit(0)) jumpBuf = 0.15; else if (down(0)) jumpBuf = Math.max(jumpBuf, 0.05);
+  if (hit(2) || hit(1) || hit(7)) diveQ = true;
+  if (hit(3) || hit(6)) abQ = true;
+  if (hit(4)) emoteQ = [5, 8, 9][emoteCycle++ % 3];
+  if (hit(5)) send({ t: 'emo', k: 3 + (emoCycle++ % 5) });
+  for (let i = 0; i < 16; i++) pad.prev[i] = down(i);
+}
 function readInput() {
-  let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joy.x;
-  let iy = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + joy.y;
+  let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joy.x + pad.x;
+  let iy = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + joy.y + pad.y;
   const l = Math.hypot(ix, iy);
   if (l > 1) { ix /= l; iy /= l; }
   const s = Math.sin(cam.yaw), c = Math.cos(cam.yaw);
@@ -1148,6 +1201,7 @@ function tickGame(dt, now) {
   const list = [...G.ents.values()];
   const tt = now / 1000;
   jumpBuf -= dt;
+  pollPad(dt);
 
   for (const e of list) {
     if (!e.active) continue;
@@ -1182,10 +1236,11 @@ function tickGame(dt, now) {
       if (e.fx) {
         if (e.fx === 'jump') { if (mine) { SFX.jump(); jumpBuf = 0; } burst(e.pos, [0xffffff], 4, 2.5); e.sq = 1.28; }
         else if (e.fx === 'land') { e.sq = 0.74; burst(e.pos, [0xffffff, 0xf2efe6], 6, 2.6, FX_DUST); ring(e.pos, 0xffffff, 1.3); if (mine) { SFX.land(); cam.dip = 0.25; } }
-        else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { SFX.hit(); cam.shake = 0.45; if (navigator.vibrate) navigator.vibrate(60); } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); burst(e.pos, [0xfff2b0, 0xffffff], 8, 9, FX_SPARK); ring(e.pos, 0xffe07a, 2); }
-        else if (e.fx === 'dive' && mine) { SFX.dive(); quest('dive'); }
+        else if (e.fx === 'hit') { e.flashT = 0.18; if (mine) { if (G.rstat) G.rstat.hits++; SFX.hit(); cam.shake = 0.45; if (navigator.vibrate) navigator.vibrate(60); } burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 12, 7); burst(e.pos, [0xfff2b0, 0xffffff], 8, 9, FX_SPARK); ring(e.pos, 0xffe07a, 2); }
+        else if (e.fx === 'dive' && mine) { SFX.dive(); quest('dive'); if (G.rstat) G.rstat.dives++; }
+        else if (e.fx === 'boxSpeed' || e.fx === 'boxShield') { const sh = e.fx === 'boxShield', col = sh ? 0xb9a6ff : 0x7fe6ff; ring(e.pos, col, 2.4); burst(e.pos, [col, 0xffffff], 16, 6, FX_RISE); if (sh) { e.auraT = 3.5; e.auraColor = col; } if (mine) { beep(700, 0.25, 'triangle', 0.09, 500); feed(sh ? '🛡️ Perisai 3,5 detik!' : '💨 Lari kencang 3,5 detik!'); } }
         else if (e.fx === 'block') { ring(e.pos, 0xb9a6ff, 1.6); if (mine) beep(900, 0.08, 'sine', 0.06); }
-        else if (e.fx === 'respawn') { if (mine) SFX.respawn(); burst(e.pos, [0x9ff0ff, 0xffffff], 14, 3, FX_RISE); ring(e.pos, 0x9ff0ff, 2.2); bolts(e.pos, 0.2, 1, 0x9ff0ff); }
+        else if (e.fx === 'respawn') { if (mine) { if (G.rstat) G.rstat.falls++; SFX.respawn(); } burst(e.pos, [0x9ff0ff, 0xffffff], 14, 3, FX_RISE); ring(e.pos, 0x9ff0ff, 2.2); bolts(e.pos, 0.2, 1, 0x9ff0ff); }
         e.fx = null;
       }
     } else {
@@ -1255,7 +1310,7 @@ function tickGame(dt, now) {
   // kamera: ikuti diri sendiri, atau tonton pemain lain kalau sudah selesai/gugur
   const me = G.ents.get(G.me);
   const actives = list.filter(e => e.active);
-  let target = me && me.active ? me : actives[specIdx % Math.max(1, actives.length)] || me || list[0];
+  let target = me && me.active ? me : actives[((specIdx % Math.max(1, actives.length)) + actives.length) % Math.max(1, actives.length)] || me || list[0];
   // selebrasi pemenang: kamera mengitari sang juara
   const champ = G.roundOver && G.celebrate;
   if (champ) {
@@ -1302,6 +1357,7 @@ function tickGame(dt, now) {
     }
     if (L.crown && !L.crownTaken) burst(tmpV.set(L.crown.position.x + (Math.random() - 0.5) * 1.6, L.crown.position.y - 0.4, L.crown.position.z + (Math.random() - 0.5) * 1.6), [0xffe07a, 0xffffff], 1, 0.5, FX_TWINKLE);
   }
+  if (L.boxes) for (const b of L.boxes) b.g.visible = !(me && me.boxAt && me.boxAt[b.id] > t);
   // panah apel
   guide.visible = false;
   if (L.collect && me && me.active && playing) {
