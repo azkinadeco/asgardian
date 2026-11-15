@@ -235,7 +235,7 @@ function makeRigged(def) {
   const inst = skClone(TPL.scene), bones = {};
   rig.add(inst);
   const bodyMat = rim(new THREE.MeshToonMaterial({ map: palette(def), gradientMap: gradMap() }));
-  let skinned = null, low = null, outlineRef = null;
+  let skinned = null, low = null, outlineRef = null, outlineHi = null;
   inst.traverse(o => {
     if (o.isBone) bones[o.name] = o;
     if (o.isSkinnedMesh) { o.material = bodyMat; o.frustumCulled = false; if (/low/i.test(o.name)) low = o; else skinned = o; }
@@ -251,6 +251,14 @@ function makeRigged(def) {
     ol.frustumCulled = false; ol.castShadow = !!low;
     hull.parent.add(ol);
     outlineRef = ol;
+    if (low) {
+      // garis tepi presisi dari badan asli untuk karakter dekat: garis dari badan poligon rendah tidak pas
+      // membungkus badan (hilang di kepala, menebal dan berkedip di badan saat bergerak)
+      outlineHi = new THREE.SkinnedMesh(skinned.geometry, outlineMat);
+      outlineHi.bind(skinned.skeleton, skinned.bindMatrix);
+      outlineHi.frustumCulled = false; outlineHi.visible = false;
+      skinned.parent.add(outlineHi);
+    }
   }
   // jangkar: anak-anaknya memakai koordinat model (y atas, +z depan) tapi ikut gerak tulang
   const anchor = name => {
@@ -375,15 +383,21 @@ function makeRigged(def) {
   }
   // semua hiasan diam (rambut, janggut, helm, pipi, senjata) digabung jadi satu mesh per jangkar
   try { mergeStatic(headAnchor, true); if (armAnchor) mergeStatic(armAnchor, false); } catch (e) { console.error('gabung hiasan gagal', e); }
-  g.userData = { rig, bones, eyes, shines, smile, outline: outlineRef, body: skinned, low, face, far: false, cape, seed: Math.random() * 10, phase: 0, lastT: 0,
+  g.userData = { rig, bones, eyes, shines, smile, outline: outlineRef, outlineHi, body: skinned, low, face, far: false, cape, seed: Math.random() * 10, phase: 0, lastT: 0,
     st: { ll: 0, lr: 0, al: 0, ar: 0, azl: 0, azr: 0, hx: 0, hy: 0, bx: 0, by: 0, eye: 1.5, spin: 0 } };
   return g;
 }
 
 // LOD: karakter jauh memakai badan poligon rendah tanpa garis tepi dan tanpa detail wajah
-export function setGodLOD(g, far, outline = !far) {
+export function setGodLOD(g, far, outline = !far, near = false) {
   const u = g.userData;
   if (!u.bones) return;
+  if (u.outlineHi) {
+    // dekat: garis tepi + bayangan dari badan asli; sedang: dari badan poligon rendah
+    near = near && outline && !far;
+    if (u.outlineHi.visible !== near) { u.outlineHi.visible = near; u.body.castShadow = near; }
+    outline = outline && !near;
+  }
   if (u.outline && u.outline.visible !== outline) u.outline.visible = outline;
   if (u.far === far) return;
   u.far = far;

@@ -227,7 +227,7 @@ function setMuted(m) {
   muted = m;
   try { localStorage.setItem('asg_mute', m ? '1' : '0'); } catch { /* */ }
   if (master) master.gain.value = m ? 0 : 1;
-  $('muteBtn').textContent = m ? '🔇' : '🔊';
+  $('muteBtn').classList.toggle('off', m);
 }
 function beep(freq, dur = 0.12, type = 'square', vol = 0.06, slide = 0) {
   if (!actx || !master) return;
@@ -714,7 +714,7 @@ $('mapSel').innerHTML = '<option value="">Acak (3 ronde)</option>' + LEVELS.map(
 $('quitBtn').onclick = () => { if (confirm('Keluar dari game ini?')) { G.leaving = true; if (ws) ws.close(); } };
 $('leaveBtn').onclick = () => { G.leaving = true; if (ws) ws.close(); };
 $('muteBtn').onclick = () => { initAudio(); setMuted(!muted); };
-$('muteBtn').textContent = muted ? '🔇' : '🔊';
+$('muteBtn').classList.toggle('off', muted);
 // pengaturan (tersimpan di perangkat)
 const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH, ts: 1, mv: 1, sv: 1, cap30: false, fps: false };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('asg_opts') || '{}')); } catch { /* */ }
@@ -922,7 +922,7 @@ const ON = {
 
 // ------------------------------------------------------------ ronde
 // jarak LOD karakter: di luar LOD_LINE tanpa garis tepi/bayangan asli, di luar LOD_FAR badan poligon rendah
-const LOD_LINE = IS_TOUCH ? 24 : 40, LOD_FAR = IS_TOUCH ? 30 : 55;
+const LOD_NEAR = IS_TOUCH ? 11 : 16, LOD_LINE = IS_TOUCH ? 24 : 40, LOD_FAR = IS_TOUCH ? 30 : 55;
 const shGeo = new THREE.PlaneGeometry(1.5, 1.5);
 const shMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, map: softTex(x => { const g = x.createRadialGradient(32, 32, 4, 32, 32, 30); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,0.7)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); }) });
 
@@ -1288,7 +1288,7 @@ function tickGame(dt, now) {
     // hemat: garis tepi hanya untuk karakter dekat, animasi dilewati untuk yang sangat jauh
     const cd = e.model.position.distanceToSquared(camera.position);
     const far = cd > LOD_FAR * LOD_FAR && e.id !== G.me && e !== G.celebrate;
-    setGodLOD(e.model, far, cd < LOD_LINE * LOD_LINE);
+    setGodLOD(e.model, far, cd < LOD_LINE * LOD_LINE, e.id === G.me || e === G.celebrate || cd < LOD_NEAR * LOD_NEAR);
     e.far = far;
     if (cd > 95 * 95 && e.id !== G.me) continue;
     const shown = G.roundOver && G.outcome ? (G.outcome.has(e.id) ? 5 : 6) : (t < 0 && t > -3 && e.anim === 0 ? 7 : e.anim);
