@@ -51,7 +51,8 @@ addEventListener('resize', __lay);
   @keyframes selPop { 0% { transform:scale(.8); } 55% { transform:scale(1.14); } 100% { transform:scale(1); } }
   @keyframes sheen { 0%, 62% { transform:translateX(-130%) skewX(-20deg); } 100% { transform:translateX(330%) skewX(-20deg); } }
   /* isi tab masuk berurutan (hanya saat tab/menu baru dibuka, bukan tiap kali daftar digambar ulang) */
-  section.enter > *, .pbody.enter > * { animation:itemIn .26s ease-out both; }
+  section.enter > *, .pbody.enter > * { animation:itemInX .26s ease-out both; }
+  @keyframes itemInX { from { transform:translate(var(--sx,0px), 6px); opacity:0; } }
   section.enter > :nth-child(2), .pbody.enter > :nth-child(2) { animation-delay:.04s; } section.enter > :nth-child(3), .pbody.enter > :nth-child(3) { animation-delay:.08s; }
   section.enter > :nth-child(4), .pbody.enter > :nth-child(4) { animation-delay:.12s; } section.enter > :nth-child(n+5), .pbody.enter > :nth-child(n+5) { animation-delay:.16s; }
   .phead { flex:none; display:flex; align-items:center; gap:8px; padding:10px 12px 8px; }
@@ -406,6 +407,12 @@ addEventListener('resize', __lay);
   /* level di menu membal saat naik */
   #profile .lv.up { animation:selPop .5s ease-out; }
 
+  /* suasana map: panas lava, dingin es, seram dunia bawah */
+  #vig[data-m=lava] { background:radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(255,90,20,.32) 100%); animation:heat 3s ease-in-out infinite; }
+  #vig[data-m=ice] { background:radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(150,210,255,.38) 100%); }
+  #vig[data-m=eerie] { background:radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(60,20,90,.45) 100%); }
+  @keyframes heat { 50% { opacity:.65; } }
+  #vig.low { animation:vigLow 1s ease-in-out infinite; }
   /* koneksi lambat */
   #top #netWarn { color:#ffb36b; animation:low 1.4s ease-in-out infinite; }
   /* kilat badai */

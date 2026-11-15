@@ -475,7 +475,7 @@ function animateRig(g, anim, t, extra) {
   } else { // diam: bernapas, menoleh, memindah tumpuan
     const br = Math.sin(t * 2.2 + sd);
     sy = 1 + br * 0.018; by = 0; azl = azr = 0.1 + br * 0.05;
-    hy = Math.sin(t * 0.6 + sd) * 0.32; hx = Math.sin(t * 0.9 + sd * 2) * 0.06;
+    hy = x.look ? x.look + Math.sin(t * 0.6 + sd) * 0.06 : Math.sin(t * 0.6 + sd) * 0.32; hx = Math.sin(t * 0.9 + sd * 2) * 0.06; // menoleh ke pemain terdekat kalau ada
     rz = Math.sin(t * 0.8 + sd) * 0.03; al = Math.sin(t * 1.1 + sd) * 0.06; ar = -al;
     // sesekali meregangkan badan (tiap dewa pada waktu berbeda)
     const cy = (t * 0.085 + sd * 0.37) % 1;

@@ -225,7 +225,6 @@ function disposeTree(o) {
 let actx = null, master = null, musicBus = null, sfxBus = null, bus = null, muted = false;
 try { muted = localStorage.getItem('asg_mute') === '1'; } catch { /* */ }
 function initAudio() {
-  primeTTS();
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
     actx.resume();
@@ -306,53 +305,67 @@ function noise(dur = 0.2, vol = 0.06, type = 'lowpass', f0 = 800, f1 = 0) {
   } catch { /* abaikan */ }
 }
 // ------------------------------------------------------------ suara karakter
-// teriakan berbahasa Inggris memakai suara TTS bawaan perangkat pemain (Web Speech API), jadi tidak ada file suara yang dibundel.
-// tiap dewa punya nada & kecepatan sendiri: [jenis suara m/f, nada 0..2, kecepatan]
-const TTS = typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined' ? speechSynthesis : null;
-// suara anak kecil yang ceria: semua dewa memakai suara anak (kalau perangkat punya) atau suara perempuan dengan nada setinggi mungkin
-// dan bicara cepat. Dewa "laki-laki" sedikit lebih rendah supaya tetap bisa dibedakan. [jenis suara, nada 0..2, kecepatan]
-const VOICE = { ann: ['k', 1.85, 1.15], zeus: ['k', 1.85, 1.3], poseidon: ['k', 1.8, 1.25], athena: ['k', 2, 1.35], hades: ['k', 1.75, 1.2], apollo: ['k', 2, 1.4],
-  ares: ['k', 1.85, 1.4], hermes: ['k', 2, 1.55], thor: ['k', 1.85, 1.3], loki: ['k', 2, 1.45], odin: ['k', 1.8, 1.2] };
-// yang diteriakkan saat mengeluarkan kekuatan (seruan ceria khas anak-anak di depannya)
-const CALLS = { zeus: 'Yay! Thunder Strike!', poseidon: 'Wheee! Tidal Wave!', athena: 'Hihi! Aegis Shield!', hades: 'Boo! Shadow Step!', apollo: 'Yippee! Solar Wings!',
-  ares: 'Hiyaa! War Rage!', hermes: 'Zoom zoom! Swift Feet!', thor: 'Boing! Hammer Leap!', loki: 'Hehehe! Trick Time!', odin: "Ta-da! Allfather's Blessing!" };
-// yang diucapkan bersama stiker emot (urutan sama dengan gambar e0..e7)
-const EMO_SAY = ['Yay yay! Party time!', 'La la la la la!', 'Hi hi! Hello!', 'Hihihi! Hahaha!', 'Hmph! No fair!', 'Eeek! Help!', 'Yay! Nice one!', 'Aww! I love it!'];
-const ttsV = { m: null, f: null, k: null };
-function pickVoices() {
-  if (!TTS) return;
-  const vs = TTS.getVoices().filter(v => /^en([-_]|$)/i.test(v.lang));
-  if (!vs.length) return;
-  const loc = v => v.localService ? 0 : 1; // utamakan suara yang terpasang di perangkat (tanpa internet, lebih cepat)
-  // urutan pilihan: suara yang jelas dan tegas dulu (macOS/iOS, Android/Chrome, Windows)
-  const MALE = ['Daniel', 'Alex', 'Aaron', 'Arthur', 'Gordon', 'Oliver', 'Rishi', 'Google UK English Male', 'Microsoft David', 'Microsoft Mark', 'Male', 'Fred'];
-  const FEM = ['Samantha', 'Karen', 'Victoria', 'Moira', 'Tessa', 'Google US English', 'Google UK English Female', 'Microsoft Zira', 'Female', 'Fiona'];
-  const by = list => { for (const n of list) { const v = vs.filter(x => x.name.toLowerCase().includes(n.toLowerCase()) && !(list === MALE && /female/i.test(x.name))).sort((p, q) => loc(p) - loc(q))[0]; if (v) return v; } return null; };
-  const any = vs.slice().sort((p, q) => loc(p) - loc(q))[0];
-  ttsV.m = by(MALE) || any; ttsV.f = by(FEM) || ttsV.m;
-  // suara anak: utamakan suara anak bawaan (sebagian perangkat Apple), lalu suara perempuan yang terdengar muda
-  ttsV.k = by(['Junior', 'Kathy', 'Princess', 'Superstar', 'Bubbles', 'Google US English', 'Samantha', 'Karen', 'Tessa', 'Victoria', 'Moira', 'Google UK English Female', 'Microsoft Zira', 'Female']) || ttsV.f;
-}
-if (TTS) { pickVoices(); try { TTS.addEventListener('voiceschanged', pickVoices); } catch { TTS.onvoiceschanged = pickVoices; } }
-let ttsPrimed = false;
-// iOS hanya mengizinkan suara TTS setelah sentuhan pertama: "pancing" dengan ucapan kosong
-function primeTTS() { if (!TTS || ttsPrimed) return; ttsPrimed = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; TTS.speak(u); } catch { /* */ } }
-// prio = suara milik pemain sendiri (memotong suara lain); suara lain dilewati kalau masih ada yang berbicara
-function say(text, god, vol, prio) {
-  const vv = opts.vo === false ? 0 : opts.vo === true || opts.vo === undefined ? 1 : +opts.vo;
-  if (!TTS || muted || vv <= 0.01 || vol < 0.2) return;
+// bukan suara orang bicara: seruan pendek lucu ("ah!", "aw~", "noo", "yes!", "yay!") yang dibuat langsung seperti suara kucing kartun.
+// caranya: gelombang gergaji yang nadanya naik-turun, lewat filter yang membuka/menutup (menutup = bunyi "o/w", membuka = "a/e").
+// nada tiap dewa sedikit beda supaya bisa dikenali, semuanya tetap tinggi & imut
+const VOX_P = { zeus: 1, poseidon: 0.94, athena: 1.16, hades: 0.86, apollo: 1.1, ares: 0.96, hermes: 1.24, thor: 0.9, loki: 1.2, odin: 0.86 };
+// tiap suku kata: [mulai, lama, nada awal, puncak, akhir (Hz), filter awal, filter akhir, desah di awal 0..1, 's' = desis di akhir]
+const VOX = {
+  ah: [[0, 0.22, 620, 840, 560, 2300, 1300, 0.35]],
+  aw: [[0, 0.32, 640, 780, 440, 1800, 620, 0.2]],
+  ow: [[0, 0.2, 720, 860, 520, 1500, 560, 0.15]],
+  oh: [[0, 0.24, 560, 700, 520, 950, 820, 0.3]],
+  noo: [[0, 0.16, 640, 640, 620, 420, 1000, 0], [0.12, 0.46, 640, 600, 360, 1000, 700, 0]],
+  yes: [[0, 0.07, 760, 820, 820, 3000, 2400, 0], [0.06, 0.18, 820, 1060, 900, 2400, 1900, 0, 's']],
+  yay: [[0, 0.14, 700, 820, 800, 2200, 2400, 0], [0.13, 0.28, 820, 1180, 900, 2600, 1500, 0]],
+  wee: [[0, 0.42, 820, 1480, 1250, 2700, 3000, 0]],
+  hi: [[0, 0.2, 660, 990, 920, 1300, 2700, 0.55]],
+  hya: [[0, 0.07, 900, 960, 920, 2700, 2700, 0.6], [0.06, 0.22, 820, 1120, 720, 2500, 1200, 0]],
+  hup: [[0, 0.13, 620, 780, 720, 1500, 900, 0.5]],
+  hehe: [[0, 0.1, 920, 1020, 900, 2400, 2200, 0.7], [0.15, 0.1, 900, 1000, 880, 2400, 2200, 0.7]],
+  haha: [[0, 0.1, 920, 1020, 880, 2000, 1700, 0.7], [0.13, 0.1, 880, 970, 840, 2000, 1700, 0.7], [0.26, 0.1, 840, 920, 800, 2000, 1700, 0.7], [0.39, 0.16, 800, 880, 640, 2000, 1200, 0.7]],
+  lala: [[0, 0.13, 660, 660, 660, 650, 2100, 0], [0.17, 0.13, 780, 780, 780, 650, 2100, 0], [0.34, 0.2, 880, 900, 860, 650, 2100, 0]],
+  hmph: [[0, 0.2, 440, 400, 330, 520, 360, 0.5]],
+  eek: [[0, 0.2, 1250, 1750, 1550, 3200, 3200, 0]],
+  aww: [[0, 0.52, 720, 840, 560, 2100, 760, 0.2]],
+};
+// seruan saat mengeluarkan kekuatan, dan saat memakai stiker (urutan sama dengan gambar e0..e7)
+const CAST_VOX = { zeus: 'hya', poseidon: 'wee', athena: 'hya', hades: 'hehe', apollo: 'yay', ares: 'hya', hermes: 'wee', thor: 'hup', loki: 'hehe', odin: 'oh' };
+const EMO_VOX = ['yay', 'lala', 'hi', 'haha', 'hmph', 'eek', 'yes', 'aww'];
+// nama kekuatan untuk tulisan di layar
+const CALLS = { zeus: 'Thunder Strike!', poseidon: 'Tidal Wave!', athena: 'Aegis Shield!', hades: 'Shadow Step!', apollo: 'Solar Wings!',
+  ares: 'War Rage!', hermes: 'Swift Feet!', thor: 'Hammer Leap!', loki: 'Trick Time!', odin: "Allfather's Blessing!" };
+const voiceVol = () => opts.vo === false ? 0 : opts.vo === true || opts.vo === undefined ? 1 : +opts.vo;
+let voxLive = 0;
+function vox(kind, god, vol = 1) {
+  const P = VOX[kind], vv = voiceVol();
+  if (!P || !actx || !master || vol < 0.05 || vv <= 0.01 || voxLive >= 3) return; // paling banyak 3 suara bersamaan supaya tidak riuh
+  const k = VOX_P[god] || 1;
   try {
-    if (!prio && (TTS.speaking || TTS.pending)) return;
-    const [g, pitch, rate] = VOICE[god] || VOICE.zeus, u = new SpeechSynthesisUtterance(text), v = ttsV[g] || ttsV.f || ttsV.m;
-    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
-    u.pitch = pitch; u.rate = rate; u.volume = Math.max(0, Math.min(1, vol * vv));
-    if (prio && (TTS.speaking || TTS.pending)) { TTS.cancel(); setTimeout(() => TTS.speak(u), 40); } // tanpa jeda, sebagian browser membuang ucapan setelah cancel
-    else TTS.speak(u);
+    if (!noiseBuf) noise(0.01, 0.0001);
+    const t0 = actx.currentTime + 0.01, out = actx.createGain();
+    out.gain.value = 0.07 * vol * vv; out.connect(sfxBus || master);
+    let end = 0;
+    for (const [st, d, a, b, c, fa, fb, h, tail] of P) {
+      const t = t0 + st, o = actx.createOscillator(), f = actx.createBiquadFilter(), g = actx.createGain(), l = actx.createOscillator(), lg = actx.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(a * k, t); o.frequency.exponentialRampToValueAtTime(b * k, t + d * 0.3); o.frequency.exponentialRampToValueAtTime(c * k, t + d);
+      l.frequency.value = 7.5; lg.gain.value = a * k * 0.02; l.connect(lg).connect(o.frequency); // getar kecil supaya hidup
+      f.type = 'lowpass'; f.Q.value = 4; f.frequency.setValueAtTime(fa * Math.sqrt(k), t); f.frequency.exponentialRampToValueAtTime(fb * Math.sqrt(k), t + d * 0.85);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1, t + 0.025); g.gain.setValueAtTime(1, t + d * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(f).connect(g).connect(out);
+      o.start(t); o.stop(t + d + 0.02); l.start(t); l.stop(t + d + 0.02);
+      const hiss = (at, dur, type, fq, v) => { const n = actx.createBufferSource(), nf = actx.createBiquadFilter(), ng = actx.createGain(); n.buffer = noiseBuf; nf.type = type; nf.frequency.value = fq; ng.gain.setValueAtTime(v, at); ng.gain.exponentialRampToValueAtTime(0.001, at + dur); n.connect(nf).connect(ng).connect(out); n.start(at, Math.random() * 0.5); n.stop(at + dur + 0.01); };
+      if (h) hiss(t, 0.06, 'bandpass', 2200, h * 0.6);           // "h" di awal
+      if (tail === 's') hiss(t + d - 0.03, 0.12, 'highpass', 4800, 0.45); // "s" di akhir ("yes")
+      end = Math.max(end, st + d);
+    }
+    voxLive++; setTimeout(() => { voxLive--; try { out.disconnect(); } catch { /* */ } }, (end + 0.15) * 1000);
   } catch { /* tanpa suara */ }
 }
-// pembawa acara: hitung mundur, lolos, gugur, juara
-const NUM_EN = ['zero', 'one', 'two', 'three', 'four', 'five'];
-function announce(text, prio = true) { say(text, 'ann', 1, prio); }
+// reaksi pemain sendiri pada momen penting (memakai suara dewanya)
+const ANN_VOX = { 'Qualified!': 'yes', 'First place!': 'yay', 'Eliminated!': 'noo', 'Victory! You are the champion!': 'wee', 'Game over!': 'aww', 'Survived!': 'yay', 'Checkpoint!': 'hup', 'Level up!': 'yay' };
+function announce(text) { if (ANN_VOX[text]) vox(ANN_VOX[text], G.god, 1); }
 // bunyi pendamping emot (selain ucapan)
 const EMO_SFX = [
   v => { noise(0.12, 0.08 * v, 'highpass', 2500); [784, 988, 1175].forEach((f, i) => setTimeout(() => beep(f, 0.12, 'triangle', 0.04 * v), 60 + i * 60)); },
@@ -381,7 +394,7 @@ function abSound(god, vol = 1, mine = false) {
   if (vol < 0.05) return;
   if (!noiseBuf) noise(0.01, 0.0001); // siapkan buffer derau
   (AB_SFX[god] || AB_SFX.zeus)(vol);
-  say(CALLS[god] || CALLS.zeus, god, vol, mine);
+  vox(CAST_VOX[god] || 'hya', god, vol);
 }
 const hexRgb = c => `${c >> 16 & 255},${c >> 8 & 255},${c & 255}`;
 // HUD kekuatan disiapkan tiap ronde sesuai dewa pemain
@@ -397,7 +410,7 @@ function abCastFx(god) {
   const a = ABILITIES[god] || ABILITIES.zeus, el = $('abCast');
   G.buffDur = a.dur || 0; G.buffEnd = performance.now() + (a.dur || 0) * 1000;
   const me = G.ents.get(G.me); if (me) me.castT = 0.45;
-  el.textContent = (CALLS[god] || a.name + '!').replace(/^[^!]*! /, ''); el.style.setProperty('--acr', hexRgb(a.color));
+  el.textContent = CALLS[god] || a.name + '!'; el.style.setProperty('--acr', hexRgb(a.color));
   for (const x of [el, $('abSlot'), $('btnAb')]) { const c = x === el ? 'on' : 'cast'; x.classList.remove(c); void x.offsetWidth; x.classList.add(c); }
   abSound(god, 1, true); buzz(40);
 }
@@ -577,7 +590,7 @@ const CONFETTI = [0xff4d4d, 0xffe14d, 0x5fe07a, 0x4dc3ff, 0xc05cff, 0xffffff];
 // resep partikel
 const FX_GLOW = { add: true, size: 0.4, grav: 0, life: 0.3 }, FX_DUST = { size: 0.42, grav: 2, life: 0.35, drag: 3 }, FX_SPARK = { add: true, size: 0.3, grav: 12, life: 0.3 },
   FX_RISE = { add: true, size: 0.35, grav: -5, life: 0.5, drag: 2 }, FX_TRAIL = { add: true, size: 0.55, grav: 0, life: 0.25, drag: 2 },
-  FX_EMBER = { add: true, size: 0.26, grav: -1.6, up: 2.5, life: 1.5, drag: 0.6 }, FX_GLINT = { add: true, size: 0.5, grav: 0, life: 0.35 }, FX_TWINKLE = { add: true, size: 0.3, grav: -0.8, life: 0.6 };
+  FX_EMBER = { add: true, size: 0.26, grav: -1.6, up: 2.5, life: 1.5, drag: 0.6 }, FX_GLINT = { add: true, size: 0.5, grav: 0, life: 0.35 }, FX_TWINKLE = { add: true, size: 0.3, grav: -0.8, life: 0.6 }, FX_FIREWORK = { add: true, size: 0.55, grav: 3, life: 1.1, drag: 1.4 };
 
 // ------------------------------------------------------------ state
 const G = {
@@ -675,7 +688,7 @@ if (!save.best || typeof save.best !== 'object') save.best = {};
 if (!TRAILS.some(x => x.id === save.trail) || !save.ownedT.includes(save.trail)) save.trail = 'asli';
 function persist() { try { localStorage.setItem('asg_save', JSON.stringify(save)); } catch { /* */ } }
 function addCoins(n) { save.coins += n; persist(); renderSkins(); }
-function addXp(n) { const before = levelOf(save.xp); save.xp += n; persist(); renderProfile(); renderSkins(); if (levelOf(save.xp) > before) { banner('star', 'LEVEL ' + levelOf(save.xp), [659, 784, 988, 1319]); setTimeout(() => announce('Level up!', false), 900); } }
+function addXp(n) { const before = levelOf(save.xp); save.xp += n; persist(); renderProfile(); renderSkins(); if (levelOf(save.xp) > before) { banner('star', 'LEVEL ' + levelOf(save.xp), [659, 784, 988, 1319]); setTimeout(() => announce('Level up!'), 900); } }
 let coinShown = null, coinAnim = 0;
 function showCoins() {
   const el = $('coins'), to = save.coins;
@@ -824,14 +837,14 @@ function renderGods() {
     b.innerHTML = `${godIcon(g.id)}${g.name}`;
     b.onmouseenter = () => { if (g.id !== G.god) { showPower(g.id); $('power').classList.add('peek'); } };
     b.onmouseleave = () => { showPower(G.god); $('power').classList.remove('peek'); };
-    b.onclick = () => { G.god = g.id; renderGods(); renderSkins(); swapPreviewGod(); say(`I am ${g.name}!`, g.id, 0.9, true); };
+    b.onclick = () => { G.god = g.id; renderGods(); renderSkins(); swapPreviewGod(); vox('hi', g.id, 0.9); };
     godsEl.appendChild(b);
   }
   showPower(G.god);
 }
 function showPower(id) {
   const a = ABILITIES[id];
-  $('power').innerHTML = `${ico('bolt')}<span><b>${a.name}</b>${a.desc}<span class="call">“${(CALLS[id] || '').replace(/^[^!]*! /, '')}”</span></span>`;
+  $('power').innerHTML = `${ico('bolt')}<span><b>${a.name}</b>${a.desc}<span class="call">“${CALLS[id] || ''}”</span></span>`;
 }
 renderGods();
 renderSkins();
@@ -876,7 +889,7 @@ function ask(text, yes, onYes) { sfxOpen(); $('confirmTxt').textContent = text; 
 $('confirmNo').onclick = () => { $('confirm').classList.add('hidden'); sfxClose(); };
 $('quitBtn').onclick = () => ask('Keluar dari game ini?', 'Keluar', () => { G.leaving = true; if (ws) ws.close(); });
 // tab menu: Dewa / Gaya / Misi
-for (const b of $('tabs').children) b.onclick = () => { for (const x of $('tabs').children) { x.classList.toggle('on', x === b); $('tab-' + x.dataset.tab).classList.toggle('hidden', x !== b); } };
+for (const b of $('tabs').children) b.onclick = () => { const tabs = [...$('tabs').children], from = tabs.findIndex(x => x.classList.contains('on')), to = tabs.indexOf(b); $('tab-' + b.dataset.tab).style.setProperty('--sx', (to > from ? 22 : to < from ? -22 : 0) + 'px'); for (const x of $('tabs').children) { x.classList.toggle('on', x === b); $('tab-' + x.dataset.tab).classList.toggle('hidden', x !== b); } };
 $('howBtn').onclick = () => $('how').classList.toggle('hidden');
 $('howPc').classList.toggle('hidden', IS_TOUCH); $('howTouch').classList.toggle('hidden', !IS_TOUCH);
 $('setClose').onclick = () => { $('settings').classList.add('hidden'); sfxClose(); };
@@ -927,7 +940,7 @@ $('optSV').onchange = () => SFX.jump();
 $('optC').onchange = e => { opts.cap30 = e.target.checked; quality.acc = quality.n = 0; quality.lastAvg = 0; applyOpts(); };
 $('optF').onchange = e => { opts.fps = e.target.checked; applyOpts(); };
 $('optV').oninput = e => { opts.vo = +e.target.value; applyOpts(); };
-$('optV').onchange = () => { if (opts.vo > 0.01) say('Hello!', G.god, 1, true); else if (TTS) TTS.cancel(); };
+$('optV').onchange = () => vox('hi', G.god, 1);
 $('fsBtn').onclick = () => {
   const el = document.documentElement, on = document.fullscreenElement || document.webkitFullscreenElement;
   try { if (on) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (el.requestFullscreen || el.webkitRequestFullscreen).call(el); }
@@ -1020,7 +1033,7 @@ const ON = {
       if (!e || e.local) continue;
       const nowS = performance.now() / 1000, ds = Math.min(0.3, Math.max(0.03, nowS - (e.netT || 0)));
       if (e.got) e.netVel.set((a[1] - e.net.x) / ds, (a[2] - e.net.y) / ds, (a[3] - e.net.z) / ds); else (e.netVel = e.netVel || new THREE.Vector3()).set(0, 0, 0);
-      if (e.netVel.lengthSq() > 900) e.netVel.set(0, 0, 0); // teleport / respawn
+      if (e.netVel.lengthSq() > 900) { e.netVel.set(0, 0, 0); if (e.got) e.blinkT = 1.1; } // teleport / respawn
       e.netT = nowS;
       e.net.set(a[1], a[2], a[3]); e.netYaw = a[4]; e.anim = a[5];
       if (!e.got) { e.pos.copy(e.net); e.yaw = a[4]; e.got = true; }
@@ -1041,6 +1054,7 @@ const ON = {
       } else flash(m.n === 1 ? 'JUARA 1!' : 'LOLOS!', 1800);
       SFX.win(); glow('255,214,110'); announce('Qualified!'); confettiRain();
     }
+    if (e && m.id !== G.me) vox('yay', e.god, Math.max(0, 1 - e.pos.distanceTo(cam.look) / 25) * 0.5);
     feed(`${nameOf(m.id)} lolos (${m.n}/${m.Q})`, 'flag', m.id);
   },
   dead(m) {
@@ -1048,6 +1062,7 @@ const ON = {
     G.alive = m.alive;
     if (e) { burst(e.pos, [0xffffff, 0xd9d4ee, 0xb9b0dd], 12, 3.5, FX_DUST); burst(e.pos, [0xffe07a, 0xffffff], 6, 6, FX_SPARK); ring(e.pos, 0xffffff, 2.2); deactivate(e, 'pop'); }
     if (m.id === G.me) { flash('JATUH!', 1500); SFX.lose(); hurt(); announce('Eliminated!'); canvas.classList.add('out'); setTimeout(() => canvas.classList.remove('out'), 1600); }
+    if (e && m.id !== G.me) vox('noo', e.god, Math.max(0, 1 - e.pos.distanceTo(cam.look) / 25) * 0.6);
     feed(`${nameOf(m.id)} gugur · sisa ${m.alive}`, 'skull', m.id);
   },
   picked(m) {
@@ -1174,6 +1189,15 @@ function makeLabel(text, mine, wins, col) {
 }
 
 // stiker emoji di atas kepala
+// mahkota kecil di atas pemain terdepan (balapan & final)
+const leadCrown = (() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 48; const x = c.getContext('2d');
+  x.beginPath(); x.moveTo(6, 16); x.lineTo(18, 26); x.lineTo(32, 6); x.lineTo(46, 26); x.lineTo(58, 16); x.lineTo(53, 42); x.lineTo(11, 42); x.closePath();
+  x.lineJoin = 'round'; x.lineWidth = 6; x.strokeStyle = '#2a1e4a'; x.stroke(); x.fillStyle = '#ffcf5a'; x.fill();
+  x.fillStyle = '#ff5f8a'; x.beginPath(); x.arc(32, 32, 4, 0, 7); x.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false, fog: false })); sp.scale.set(0.5, 0.375, 1); sp.renderOrder = 10; sp.visible = false; return sp;
+})();
 // bintang berputar di atas kepala saat terpental (satu tekstur dipakai bersama)
 const starTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
@@ -1321,7 +1345,7 @@ function showEmo(e, k) {
   e.bubble.visible = true; e.bubbleT = 2.2; e.reactT = 1.8; e.reactK = ch;
   // suara emot: bunyi pendamping + ucapan dengan suara dewanya; makin jauh makin pelan
   const mine = e.id === G.me, vol = mine ? 1 : Math.pow(Math.max(0, 1 - e.pos.distanceTo(cam.look) / 26), 1.3) * 0.8;
-  if (vol > 0.05) { EMO_SFX[ch](vol); say(EMO_SAY[ch], e.god, vol, mine); }
+  if (vol > 0.05) { EMO_SFX[ch](vol); vox(EMO_VOX[ch], e.god, vol); }
 }
 
 // how: 'up' = lolos (terangkat sambil berputar jadi cahaya), 'pop' = gugur (mengecil dengan kepulan); kosong = langsung hilang
@@ -1333,6 +1357,7 @@ function deactivate(e, how) {
 const VAN_T = 0.45;
 
 function clearRound() {
+  if (leadCrown.parent) leadCrown.parent.remove(leadCrown); leadCrown.visible = false;
   for (const e of G.ents.values()) { scene.remove(e.model, e.shadow); disposeTree(e.model); }
   G.ents.clear();
   if (G.L) { scene.remove(G.L.group); disposeTree(G.L.group); G.L = null; }
@@ -1352,6 +1377,7 @@ function startRound(m) {
   const n = m.contenders.length;
   m.contenders.forEach((id, i) => addEnt(id, i, n));
   G.round = m; G.roundOver = false; G.fin = 0; G.alive = n; G.lastCount = 99; G.apples = 0; G.countKey = null; G.hintI = 0; G.abWasCd = false; G.rstat = { falls: 0, hits: 0, dives: 0 };
+  $('vig').dataset.m = { 4: 'lava', 8: 'ice', 5: 'eerie' }[lv] || '';
   music.final = m.type === 'final'; music.fast = false; G.dust = DUST[lv]; G.fallK = 0; G.annLeft = 0;
   music.setMood(lv); setAmbient(lv === 9 ? 3 : lv); setLights(lv === 9 ? 3 : lv); ambience(AMB_SOUND[lv]);
   G.phase = 'play';
@@ -1413,7 +1439,7 @@ function enterLobbyScene() {
   G.round = { lobby: true, type: 'lobby', startAt: serverNow() - 60000, contenders: [], limit: 0, Q: 0, idx: -1 };
   G.lastCount = 0; G.roundOver = false;
   cam.yaw = 0; cam.pitch = 0.42; cam.init = false;
-  music.setMood(-1); setAmbient('plaza'); setLights('def'); ambience('wind'); G.dust = DUST[0];
+  music.setMood(-1); setAmbient('plaza'); setLights('def'); ambience('wind'); G.dust = DUST[0]; $('vig').dataset.m = '';
   syncLobbyEnts();
   setupAbHud((G.roster.get(G.me) || {}).god);
   $('touch').classList.toggle('hidden', !IS_TOUCH);
@@ -1429,7 +1455,10 @@ function syncLobbyEnts() {
 const cdTxtPc = me => me.abCd > 0 ? String(Math.ceil(me.abCd)) : '';
 function startRoundUI(m, lv, n) {
   const info = LEVELS[lv];
-  setTimeout(() => announce(m.type === 'final' ? 'Final round!' : `Round ${NUM_EN[m.idx + 1] || m.idx + 1}!`), 600);
+  if (m.type === 'final') { // drum roll yang makin rapat lalu dentum + simbal
+    let tt0 = 300; for (let i = 0; i < 22; i++) { const gap = 150 - i * 5; setTimeout(() => noise(0.06, 0.02 + i * 0.002, 'bandpass', 220, 140), tt0); tt0 += gap; }
+    setTimeout(() => { beep(70, 0.5, 'sine', 0.12, -30); noise(1.2, 0.05, 'highpass', 5000); }, tt0);
+  }
   setupAbHud((G.roster.get(G.me) || {}).god);
   $('rname').innerHTML = `Ronde <b>${m.idx + 1}/${m.total}</b><span class="mn">· ${esc(info.name)}</span>`;
   $('goal').textContent = info.goal;
@@ -1693,7 +1722,7 @@ function tickGame(dt, now) {
       }
       if (mine) abQ = false;
       stepEnt(e, i, dt, L, t);
-      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); glow('255,214,110'); announce('Checkpoint!', false); quest('cp'); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); ring(e.pos, 0xffe07a, 3); burst(e.pos, [0xffe07a, 0xffffff], 10, 4, FX_RISE); }
+      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); glow('255,214,110'); announce('Checkpoint!'); quest('cp'); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); ring(e.pos, 0xffe07a, 3); burst(e.pos, [0xffe07a, 0xffffff], 10, 4, FX_RISE); }
       if (e.speedT > 0 && e.grounded) burst(e.pos, [0x7fe6ff, 0xffffff], 1, 1.5, FX_GLOW);
       if (e.anim === 1 && (e.stepAcc = (e.stepAcc || 0) + dt * Math.hypot(e.vel.x, e.vel.z)) > 1.7) { e.stepAcc = 0; SFX.step(); }
       if (emoteQ) { e.emoteT = emoteQ === 5 ? 1.6 : 2.6; e.emoteK = emoteQ === true ? 5 : emoteQ; if (mine) send({ t: 'emo', k: { 8: 1, 9: 2 }[emoteQ] || 0 }); emoteQ = false; }
@@ -1716,7 +1745,7 @@ function tickGame(dt, now) {
         else if (e.fx === 'dive' && mine) { SFX.dive(); quest('dive'); if (G.rstat) G.rstat.dives++; }
         else if (e.fx === 'boxSpeed' || e.fx === 'boxShield') { const sh = e.fx === 'boxShield', col = sh ? 0xb9a6ff : 0x7fe6ff; ring(e.pos, col, 2.4); burst(e.pos, [col, 0xffffff], 16, 6, FX_RISE); if (sh) { e.auraT = 3.5; e.auraColor = col; } if (mine) { glow(sh ? '185,166,255' : '120,220,255'); beep(700, 0.25, 'triangle', 0.09, 500); feed(sh ? 'Perisai 3,5 detik!' : 'Lari kencang 3,5 detik!', sh ? 'shield' : 'wind'); } }
         else if (e.fx === 'block') { ring(e.pos, 0xb9a6ff, 1.6); if (mine) beep(900, 0.08, 'sine', 0.06); }
-        else if (e.fx === 'respawn') { e.spawnPop = 0.4; if (mine) { if (G.rstat) G.rstat.falls++; SFX.respawn(); glow('235,245,255'); } burst(e.pos, [0x9ff0ff, 0xffffff], 14, 3, FX_RISE); ring(e.pos, 0x9ff0ff, 2.2); bolts(e.pos, 0.2, 1, 0x9ff0ff); }
+        else if (e.fx === 'respawn') { e.spawnPop = 0.4; e.blinkT = 1.1; if (mine) { if (G.rstat) G.rstat.falls++; SFX.respawn(); glow('235,245,255'); } burst(e.pos, [0x9ff0ff, 0xffffff], 14, 3, FX_RISE); ring(e.pos, 0x9ff0ff, 2.2); bolts(e.pos, 0.2, 1, 0x9ff0ff); }
         e.fx = null;
       }
     } else {
@@ -1736,6 +1765,8 @@ function tickGame(dt, now) {
     if (!e.local && e.anim !== e.prevAnim) { if (e.anim === 2) e.sq = 1.25; else if (e.prevAnim === 2) { e.sq = 0.78; e.landT = LAND_T; } if (e.anim === 4) { e.flashT = 0.18; burst(e.pos, [0xffe04a, 0xffffff, 0xff9d2e], 10, 6); } }
     // kilat putih sesaat ketika terpental
     if (e.flashT > 0 || e.flashOn) { e.flashT = (e.flashT || 0) - dt; const on = e.flashT > 0; if (on !== e.flashOn) { e.flashOn = on; e.model.traverse(n => { if (n.isSkinnedMesh && n.material.emissive) n.material.emissive.setScalar(on ? 0.55 : 0); }); } }
+    if (e.anim === 4 && e.prevAnim !== 4 && e.id !== G.me) { const mm = G.ents.get(G.me); if (mm && mm.active && mm.anim === 3 && mm.pos.distanceToSquared(e.pos) < 4) { floatText(e.pos, 'Kena!', '#ffe14d'); buzz(35); beep(1320, 0.08, 'square', 0.04, 400); G.hitStop = 0.05; if (G.rstat) G.rstat.bonks = (G.rstat.bonks || 0) + 1; } }
+    if (e.anim === 4 && e.prevAnim !== 4 && tt - (e.voxAt || -9) > 0.9) { e.voxAt = tt; vox(['ow', 'aw', 'ah'][(Math.random() * 3) | 0], e.god, e.id === G.me ? 1 : Math.max(0, 1 - e.pos.distanceTo(camera.position) / 22) * 0.7); }
     if (e.anim === 4 && e.prevAnim !== 4) { dizzy(e); if (tt - (e.powAt || -9) > 1.2) { e.powAt = tt; pow(e.pos); } }
     tickDizzy(e, dt, tt);
     e.prevAnim = e.anim;
@@ -1754,6 +1785,7 @@ function tickGame(dt, now) {
     }
     e.sq = 1 + ((e.sq || 1) - 1) * Math.exp(-9 * dt);
     const sx = 1 / Math.sqrt(e.sq);
+    if (e.blinkT > 0) { e.blinkT -= dt; e.model.visible = e.blinkT <= 0 || Math.floor(e.blinkT * 14) % 2 === 0; } // berkedip setelah muncul kembali
     let pop = 1;
     if (e.spawnPop > 0) { e.spawnPop -= dt; const q = Math.min(1, 1 - e.spawnPop / 0.4) - 1; pop = Math.max(0.05, 1 + 2.7 * q * q * q + 1.7 * q * q); } // membal dari kecil
     e.model.scale.set(sx * pop, e.sq * pop, sx * pop);
@@ -1786,6 +1818,14 @@ function tickGame(dt, now) {
     if (e.castT > 0 && shown !== 3 && shown !== 4) shown = 13;
     else if (e.reactT > 0 && (shown === 0 || shown === 7)) shown = EMO_ANIM[e.reactK] ?? shown; // diam: badan ikut bereaksi sesuai stiker
     e.landT = Math.max(0, (e.landT || 0) - dt); ax.land = e.landT / LAND_T;
+    if (leadCrown.parent === e.model) leadCrown.position.y = 2.72 + Math.sin(tt * 4) * 0.05;
+    if (cd < 18 * 18 && (e.lookT = (e.lookT || 0) - dt) <= 0) {
+      e.lookT = 0.25; let best = null, bd = 49;
+      for (const o of list) { if (o === e || !o.active) continue; const d2 = (o.pos.x - e.pos.x) ** 2 + (o.pos.z - e.pos.z) ** 2; if (d2 < bd) { bd = d2; best = o; } }
+      const rel = best ? ((Math.atan2(best.pos.x - e.pos.x, best.pos.z - e.pos.z) - e.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI : 0;
+      e.lookTo = best && Math.abs(rel) < 1.7 ? Math.max(-0.85, Math.min(0.85, rel)) : 0;
+    }
+    ax.look = (ax.look || 0) + ((e.lookTo || 0) - (ax.look || 0)) * Math.min(1, dt * 5);
     animateGod(e.model, shown, tt, ax);
     const gy = L.groundAt(e.pos.x, e.pos.z, e.pos.y + 0.6);
     e.shadow.visible = gy > -1e8 && (!sun.castShadow || cd > LOD_LINE * LOD_LINE);
@@ -1816,6 +1856,11 @@ function tickGame(dt, now) {
     if (!spot.visible) { spot.visible = true; spotRing.visible = true; }
     spot.position.set(champ.pos.x, champ.pos.y + 6.2, champ.pos.z); spot.rotation.y = tt * 0.4; spot.material.opacity = 0.16 + Math.sin(tt * 3) * 0.03;
     spotRing.position.set(champ.pos.x, champ.pos.y + 0.05, champ.pos.z); spotRing.scale.setScalar(3.4 + Math.sin(tt * 3) * 0.15);
+    if ((champ.fwT = (champ.fwT || 0) + dt) > 0.75) { // kembang api di langit di belakang juara
+      champ.fwT = 0; const c = [[0xff4d6d, 0xffe14d], [0x4dc3ff, 0xffffff], [0x5fe07a, 0xffe14d], [0xc05cff, 0xff9ad5]][(Math.random() * 4) | 0];
+      burst(tmpV.set(champ.pos.x + (Math.random() - 0.5) * 16, champ.pos.y + 9 + Math.random() * 5, champ.pos.z - 4 - Math.random() * 6), c, 34, 10, FX_FIREWORK);
+      setTimeout(() => { noise(0.25, 0.05, 'lowpass', 700, 120); beep(180, 0.2, 'sine', 0.04, -100); }, 120);
+    }
     if ((champ.spT = (champ.spT || 0) + dt) > 0.12) { champ.spT = 0; const a = Math.random() * 6.28; burst(tmpV.set(champ.pos.x + Math.cos(a) * 1.4, champ.pos.y, champ.pos.z + Math.sin(a) * 1.4), [0xffe07a, 0xffffff], 1, 0.6, FX_TWINKLE); }
     if (L.crown) { L.crownTaken = true; L.crown.position.set(champ.pos.x, champ.pos.y + 2.5, champ.pos.z); L.crown.scale.setScalar(0.62); } // mahkota di kepala juara
   }
@@ -1865,6 +1910,8 @@ function tickGame(dt, now) {
   {
     const gy = me && me.active && !champ ? L.groundAt(me.pos.x, me.pos.z, me.pos.y + 0.6) : -1e9;
     meRing.visible = gy > -1e8 && me.pos.y - gy < 6;
+    const rc = me && me.abCd <= 0 && ABILITIES[me.god] ? ABILITIES[me.god].color : 0xffd866; // siap: warna kekuatan
+    if (rc !== G.ringCol) { G.ringCol = rc; meRing.material.color.set(rc); }
     if (meRing.visible) { meRing.position.set(me.pos.x, gy + 0.06, me.pos.z); meRing.scale.setScalar((1 + Math.sin(tt * 4) * 0.05) * Math.max(0.5, 1 - (me.pos.y - gy) * 0.1)); }
   }
   if (L.boxes) for (const b of L.boxes) b.g.visible = !(me && me.boxAt && me.boxAt[b.id] > t);
@@ -1933,8 +1980,8 @@ function tickGame(dt, now) {
   // hitung mundur
   if (t < 0) {
     const n = Math.ceil(-t);
-    if (n <= 3 && n !== G.lastCount) { G.lastCount = n; flash(String(n), 0); SFX.tick(); buzz(25); hideCard(); announce(NUM_EN[n][0].toUpperCase() + NUM_EN[n].slice(1) + '!'); }
-  } else if (G.lastCount !== 0) { G.lastCount = 0; flash('MULAI!', 900); SFX.go(); buzz([40, 30, 90]); hideCard(); cam.fov += 8; announce('Go!'); }
+    if (n <= 3 && n !== G.lastCount) { G.lastCount = n; flash(String(n), 0); SFX.tick(); buzz(25); hideCard(); }
+  } else if (G.lastCount !== 0) { G.lastCount = 0; flash('MULAI!', 900); SFX.go(); buzz([40, 30, 90]); if (me && me.active) { ring(me.pos, 0x9af07a, 3); burst(me.pos, [0x9af07a, 0xffffff, 0xffe07a], 16, 5, FX_RISE); } hideCard(); cam.fov += 8; }
 
   hudAcc += dt;
   if (hudAcc > 0.2) {
@@ -1944,7 +1991,7 @@ function tickGame(dt, now) {
     // 10 detik terakhir: timer memerah dan berdetak
     const low = playing && R.limit > 0 && left <= 10 && !!(me && me.active);
     if (playing && me && me.active && R.limit > 0 && left !== G.annLeft && (left === 60 && R.limit > 75 || left === 10)) {
-      G.annLeft = left; announce(left === 60 ? 'One minute left!' : 'Ten seconds!');
+      G.annLeft = left;
       const tp = $('timer'); tp.classList.remove('ping'); void tp.offsetWidth; tp.classList.add('ping');
       if (left === 60) tipShow('Sisa 1 menit!', 'info');
     }
@@ -1969,6 +2016,11 @@ function tickGame(dt, now) {
     // papan peringkat mini (3 terdepan)
     const lead = $('lead'), showLead = R.type === 'race' || R.type === 'final';
     lead.classList.toggle('hidden', !showLead || G.roundOver);
+    { // pindahkan mahkota ke pemain terdepan
+      const ld = showLead && !G.roundOver ? actives.reduce((b, e) => (!b || e.pos.z > b.pos.z ? e : b), null) : null;
+      if (ld && leadCrown.parent !== ld.model) ld.model.add(leadCrown);
+      leadCrown.visible = !!ld;
+    }
     if (showLead) {
       const lh = actives.slice().sort((a, b) => b.pos.z - a.pos.z).slice(0, 3).map((e, i) => `<div class="${e === me ? 'me' : ''}"><span>${G.fin + i + 1}</span>${esc(e.name)}</div>`).join('');
       if (lh !== G.leadHtml) lead.innerHTML = G.leadHtml = lh;
@@ -2023,7 +2075,8 @@ function tickMenu(dt, now) {
   if (previewGod) {
     if (dragId === null) { G.pvYaw = (G.pvYaw || 0) + (G.pvVel || 0) * dt; G.pvVel = (G.pvVel || 0) * Math.exp(-3 * dt); G.pvYaw *= Math.exp(-0.6 * dt); } // berputar lalu pelan kembali
     previewGod.rotation.y = Math.sin(now * 0.0008) * 0.7 + 0.2 + (G.pvYaw || 0);
-    animateGod(previewGod, G.pvT > 0 ? 5 : G.pvT > -1.6 ? 9 : 0, ts);
+    if (QS.has('looktest')) previewGod.rotation.y = 0; // tes arah menoleh: badan menghadap kamera
+    animateGod(previewGod, QS.has('looktest') ? 0 : G.pvT > 0 ? 5 : G.pvT > -1.6 ? 9 : 0, ts, QS.has('looktest') ? { look: +QS.get('looktest') } : undefined);
     G.pvPop = Math.max(0, (G.pvPop || 0) - dt);
     const q = 1 - G.pvPop / 0.4, sc = G.pvPop > 0 ? 0.55 + 0.45 * (1 + 2.6 * Math.pow(q - 1, 3) + 1.6 * Math.pow(q - 1, 2)) : 1; // membal (ease-out-back)
     previewGod.scale.setScalar(sc);
@@ -2107,7 +2160,19 @@ if (QS.has('auto')) {
 }
 enterMenuScene();
 if (!QS.has('auto')) show('mode');
-// tes: laporkan suara TTS yang dipilih dan ucapkan satu teriakan
-if (QS.has('ttstest')) setTimeout(() => { pickVoices(); report('tts ' + (TTS ? `voices=${TTS.getVoices().length} m=${ttsV.m && ttsV.m.name} f=${ttsV.f && ttsV.f.name} k=${ttsV.k && ttsV.k.name}` : 'tidak ada')); say(CALLS.zeus, 'zeus', 1, true); }, 2500);
+// tes suara seruan tanpa speaker: render tiap seruan di OfflineAudioContext, laporkan puncak & RMS dibanding bunyi 'hit'
+if (QS.has('voxtest')) (async () => {
+  const res = [];
+  for (const kind of [...Object.keys(VOX), '_hit']) {
+    const oc = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100), keep = [actx, master, bus, sfxBus, noiseBuf, voxLive];
+    actx = oc; master = bus = sfxBus = oc.destination; noiseBuf = null; voxLive = 0;
+    try { noise(0.01, 0.0001); if (kind === '_hit') SFX.hit(); else vox(kind, 'zeus', 1); } catch (err) { res.push(kind + ' ERR ' + err); }
+    [actx, master, bus, sfxBus, noiseBuf, voxLive] = keep;
+    const d = (await oc.startRendering()).getChannelData(0); let pk = 0, sq = 0, n = 0;
+    for (const v of d) { pk = Math.max(pk, Math.abs(v)); if (Math.abs(v) > 0.002) { sq += v * v; n++; } }
+    res.push(`${kind} pk=${pk.toFixed(3)} rms=${Math.sqrt(sq / Math.max(1, n)).toFixed(3)}`);
+  }
+  report('voxtest ' + res.join(' | '));
+})().catch(err => report('voxtest ERR ' + (err.stack || err)));
 if (QS.has('ui')) { pickMode(QS.get('mode') === 'solo' ? 'solo' : 'lan'); const tb = $('tabs').querySelector(`[data-tab="${QS.get('ui')}"]`); if (tb) tb.click(); if (QS.get('ui') === 'all') { let i = 0; setInterval(() => $('tabs').children[++i % 3].click(), shot.every); } }
 requestAnimationFrame(frame);
