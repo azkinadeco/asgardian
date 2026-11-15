@@ -420,11 +420,11 @@ function pose(u, name, x, y, z) {
   b.quaternion.copy(r.Pi).multiply(_d).multiply(r.P).multiply(r.L);
 }
 
-// extra (opsional): { vy: kecepatan vertikal, speed: kecepatan mendatar, turn: laju belok (rad/detik) }
+// extra (opsional): { vy: kecepatan vertikal, speed: kecepatan mendatar, turn: laju belok (rad/detik), land: 1→0 sesaat setelah mendarat }
 function animateRig(g, anim, t, extra) {
   const u = g.userData, st = u.st, x = extra || {};
   const dt = Math.min(0.05, Math.max(0, t - u.lastT)) || 0.016; u.lastT = t;
-  const speed = x.speed ?? 8, vy = x.vy ?? 0, turn = x.turn ?? 0, sd = u.seed;
+  const speed = x.speed ?? 8, vy = x.vy ?? 0, turn = x.turn ?? 0, land = x.land || 0, sd = u.seed;
   // langkah kaki mengikuti kecepatan sebenarnya
   u.phase += dt * (5 + speed * 1.05);
   const p = u.phase, s = Math.sin(p), c = Math.cos(p);
@@ -435,13 +435,15 @@ function animateRig(g, anim, t, extra) {
     ll = s * amp; lr = -s * amp;
     al = -s * amp * 1.15; ar = s * amp * 1.15;
     azl = 0.28 + Math.max(0, s) * 0.2; azr = 0.28 + Math.max(0, -s) * 0.2;
-    by = Math.abs(c) * 0.1; bx = 0.16 + speed * 0.012; bT = s * 0.2; hy = -s * 0.14; hx = -0.1 + Math.abs(c) * 0.05;
+    by = Math.abs(c) * 0.1; bx = 0.16 + speed * 0.012; bT = s * 0.2; hy = -s * 0.14 + Math.max(-0.45, Math.min(0.45, turn * 0.09)); hx = -0.1 + Math.abs(c) * 0.05;
     rz = Math.max(-0.3, Math.min(0.3, -turn * 0.06));
   } else if (anim === 2) { // di udara: naik = meregang, turun = mengepak & kaki menekuk
     if (vy > 1) { azl = azr = 1.45; al = ar = -0.25; ll = 0.35; lr = 0.15; hx = -0.25; rx = -0.08; sy = 1.04; }
-    else { const f = Math.sin(t * 20 + sd) * 0.28; azl = 1.0 + f; azr = 1.0 - f; ll = -0.55; lr = -0.3; hx = 0.18; rx = Math.min(0.3, -vy * 0.012); eye = 1.75; }
+    else if (vy < -15) { // jatuh jauh: panik, tangan-kaki mengayuh, mata melotot
+      const f = Math.sin(t * 26 + sd); azl = 1.5 + f * 0.5; azr = 1.5 - f * 0.5; al = f * 0.6; ar = -f * 0.6; ll = f * 0.7; lr = -f * 0.7; hx = -0.3; rx = 0.25; rz = Math.sin(t * 9 + sd) * 0.12; eye = 2.0; sy = 1.05;
+    } else { const f = Math.sin(t * 20 + sd) * 0.28; azl = 1.0 + f; azr = 1.0 - f; ll = -0.55; lr = -0.3; hx = 0.18; rx = Math.min(0.3, -vy * 0.012); eye = 1.75; }
   } else if (anim === 3) { // terjang: gaya terbang
-    rx = 1.38; by = 0.3; al = ar = -1.5; azl = azr = 0.3; ll = 0.25 + Math.sin(t * 24) * 0.25; lr = 0.25 - Math.sin(t * 24) * 0.25; hx = -0.5; eye = 1.1;
+    rx = 1.38; by = 0.3; rz = Math.sin(t * 7 + sd) * 0.1; al = ar = -1.5; azl = azr = 0.3; ll = 0.25 + Math.sin(t * 24) * 0.25; lr = 0.25 - Math.sin(t * 24) * 0.25; hx = -0.5; eye = 1.1;
   } else if (anim === 4) { // terpental: jungkir balik sambil menggelepar
     rx = -1.2; by = 0.4; spin = 1; rz = Math.sin(t * 19 + sd) * 0.4;
     ll = Math.sin(t * 23) * 0.8; lr = -Math.sin(t * 23 + 1) * 0.8; al = Math.sin(t * 21) * 1.1; ar = -Math.sin(t * 21 + 2) * 1.1; azl = azr = 1.1; eye = 0.35;
@@ -463,7 +465,14 @@ function animateRig(g, anim, t, extra) {
     sy = 1 + br * 0.018; by = 0; azl = azr = 0.1 + br * 0.05;
     hy = Math.sin(t * 0.6 + sd) * 0.32; hx = Math.sin(t * 0.9 + sd * 2) * 0.06;
     rz = Math.sin(t * 0.8 + sd) * 0.03; al = Math.sin(t * 1.1 + sd) * 0.06; ar = -al;
+    // sesekali meregangkan badan (tiap dewa pada waktu berbeda)
+    const cy = (t * 0.085 + sd * 0.37) % 1;
+    if (cy > 0.86 && (x.speed ?? 0) < 0.5) { const q = Math.sin((cy - 0.86) / 0.14 * Math.PI); azl = azr = 0.1 + q * 1.9; hx = -0.28 * q; sy = 1 + q * 0.04; hy *= 1 - q; }
+    // baru berhenti dari lari: badan menahan ke belakang, tangan menyeimbangkan
+    if (x.speed > 2.5) { const q = Math.min(1, (x.speed - 2.5) / 5); bx = -0.24 * q; azl = azr = 0.1 + q * 0.75; ll = 0.3 * q; lr = -0.18 * q; hx = 0.12 * q; }
   }
+  // mendarat: lutut meredam, badan membungkuk, tangan terbuka menyeimbangkan
+  if (land > 0 && anim !== 3 && anim !== 4) { const q = land * land; by -= 0.13 * q; bx += 0.34 * q; azl += 0.55 * q; azr += 0.55 * q; hx -= 0.18 * q; if (anim !== 1) { ll += 0.3 * q; lr -= 0.3 * q; } }
   // kedip
   const bl = (t * 0.37 + sd) % 1;
   if (bl > 0.955 && anim !== 4) eye = 0.12;

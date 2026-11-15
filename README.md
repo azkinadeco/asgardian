@@ -6,11 +6,11 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 - Klik dua kali `start.command` (Mac), atau jalankan `npm install` sekali lalu `npm start`.
 - Di komputer: buka `http://localhost:3000`.
 - Di HP (WiFi yang sama): buka alamat `http://192.168.x.x:3000` yang tampil di terminal dan di lobby.
-- Pemain pertama yang masuk jadi host dan menekan MULAI GAME.
+- Pemain pertama yang masuk jadi host dan menekan MULAI.
 
 ## Mode
 - **Main Sendiri** — ruang pribadi berisi bot (jumlah dan tingkat kesulitan bisa diatur).
-- **Multiplayer WiFi** — semua pemain di WiFi yang sama masuk ke ruang yang sama. Bisa juga membuat room privat berkode 4 huruf (BUAT ROOM) dan membagikan kodenya.
+- **Main Bareng** — semua pemain di WiFi yang sama masuk ke ruang yang sama. Bisa juga membuat room privat berkode 4 huruf (Buat room) dan membagikan kodenya.
 - **Online** — belum ada; server sudah mendukung beberapa ruang (`createRoom` di `server.js`), tinggal ditambah ruang berkode dan hosting.
 
 ## Struktur
@@ -35,6 +35,10 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 ## Mode tes
 `DEBUG=1 node server.js`, lalu buka `http://localhost:3000/?auto=1&level=N` untuk langsung masuk ke map nomor N (0–11).
 Tambahkan `&shot=3&ttl=30` supaya halaman mengirim screenshot tiap 3 detik ke folder `SHOT_DIR` dan menutup dirinya setelah 30 detik; `?lineup=1` menampilkan barisan semua dewa di menu.
+`&dom=1` ikut mengirim salinan HTML halaman (`dom_NN.png`, isinya HTML) untuk memeriksa tampilan menu/HUD; `&ui=god|style|quest` membuka tab menu; `&die=3` membuat pemain gugur setelah 3 detik (ronde bertahan). `&ab=2` memakai kekuatan 2 detik setelah ronde mulai; `?voicetest=1&shot=5` merender teriakan tiap dewa tanpa speaker dan mencatat kerasnya di log.
+
+## Font
+Tulisan memakai Fredoka (SIL Open Font License 1.1, `public/assets/fonts/OFL.txt`), dibundel di `public/assets/fonts` supaya tetap tampil tanpa internet.
 
 ## Menuju APK / app
 Game ini butuh server. Untuk dirilis sebagai app: taruh `server.js` di hosting (HTTPS/WSS), lalu bungkus folder `public` dengan Capacitor (Android/iOS) yang mengarah ke alamat server tersebut.

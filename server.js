@@ -15,7 +15,7 @@ const SHOTS = process.env.SHOT_DIR || path.join(os.tmpdir(), 'asgardian-shots');
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png',
-  '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary',
+  '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary',
 };
 
 const server = http.createServer((req, res) => {
