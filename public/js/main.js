@@ -220,6 +220,7 @@ function disposeTree(o) {
 let actx = null, master = null, musicBus = null, sfxBus = null, bus = null, muted = false;
 try { muted = localStorage.getItem('asg_mute') === '1'; } catch { /* */ }
 function initAudio() {
+  primeTTS();
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
     actx.resume();
@@ -288,51 +289,61 @@ function noise(dur = 0.2, vol = 0.06, type = 'lowpass', f0 = 800, f1 = 0) {
     src.start(t, Math.random() * 0.5); src.stop(t + dur);
   } catch { /* abaikan */ }
 }
-// ------------------------------------------------------------ suara kekuatan
-// teriakan dewa disintesis: gelombang gergaji lewat dua filter resonansi vokal (formant), nada naik-turun per suku kata.
-// f0 = nada dasar (Hz), v = formant vokal [F1, F2], syl = [mulai, lama, nada awal×, puncak×, akhir×], gr = serak, vib = getar (Hz)
-const VOICES = {
-  zeus: { f0: 120, v: [750, 1150], syl: [[0, 0.38, 0.9, 1.25, 0.8]], gr: 0.3 },
-  poseidon: { f0: 105, v: [520, 880], syl: [[0, 0.5, 0.85, 1.15, 0.75]], gr: 0.25 },
-  athena: { f0: 270, v: [700, 1700], syl: [[0, 0.07, 1, 1.05, 1], [0.07, 0.26, 1.05, 1.3, 0.9]], gr: 0 },
-  hades: { f0: 82, v: [480, 820], syl: [[0, 0.62, 1, 0.92, 0.78]], gr: 0.5, vib: 7 },
-  apollo: { f0: 240, v: [760, 1250], syl: [[0, 0.42, 0.9, 1.4, 1.2]], gr: 0 },
-  ares: { f0: 125, v: [800, 1250], syl: [[0, 0.5, 0.8, 1.35, 0.7]], gr: 0.65 },
-  hermes: { f0: 250, v: [600, 1500], syl: [[0, 0.11, 1.1, 1.25, 1], [0.15, 0.14, 1.25, 1.45, 1.2]], gr: 0 },
-  thor: { f0: 110, v: [760, 1180], syl: [[0, 0.46, 0.8, 1.3, 0.75]], gr: 0.55 },
-  loki: { f0: 210, v: [740, 1250], syl: [[0, 0.1, 1.3, 1.35, 1.2], [0.14, 0.1, 1.2, 1.25, 1.1], [0.28, 0.15, 1.1, 1.15, 0.85]], gr: 0.1 },
-  odin: { f0: 92, v: [450, 800], syl: [[0, 0.66, 0.95, 1.05, 0.85]], gr: 0.25, vib: 5 },
-};
-function voice(god, vol = 1) {
-  if (!actx || !master || vol < 0.05) return;
-  const V = VOICES[god] || VOICES.zeus;
+// ------------------------------------------------------------ suara karakter
+// teriakan berbahasa Inggris memakai suara TTS bawaan perangkat pemain (Web Speech API), jadi tidak ada file suara yang dibundel.
+// tiap dewa punya nada & kecepatan sendiri: [jenis suara m/f, nada 0..2, kecepatan]
+const TTS = typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined' ? speechSynthesis : null;
+const VOICE = { ann: ['f', 1.05, 1.1], zeus: ['m', 0.6, 1.05], poseidon: ['m', 0.45, 0.95], athena: ['f', 1.25, 1.1], hades: ['m', 0.15, 0.85], apollo: ['m', 1.2, 1.15],
+  ares: ['m', 0.4, 1.25], hermes: ['m', 1.55, 1.4], thor: ['m', 0.5, 1.1], loki: ['m', 1.35, 1.2], odin: ['m', 0.3, 0.85] };
+// yang diteriakkan saat mengeluarkan kekuatan
+const CALLS = { zeus: 'Thunder Strike!', poseidon: 'Tidal Wave!', athena: 'Aegis Shield!', hades: 'Shadow Step!', apollo: 'Solar Wings!',
+  ares: 'War Rage!', hermes: 'Swift Feet!', thor: 'Hammer Leap!', loki: 'Trick Time!', odin: "Allfather's Blessing!" };
+// yang diucapkan bersama stiker emot (urutan sama dengan gambar e0..e7)
+const EMO_SAY = ['Woo hoo!', 'La la la!', 'Hello!', 'Wa ha ha ha ha!', 'Hey! Not fair!', 'Aaah! Help!', 'Nice one!', 'Aww, yeah!'];
+const ttsV = { m: null, f: null };
+function pickVoices() {
+  if (!TTS) return;
+  const vs = TTS.getVoices().filter(v => /^en([-_]|$)/i.test(v.lang));
+  if (!vs.length) return;
+  const loc = v => v.localService ? 0 : 1; // utamakan suara yang terpasang di perangkat (tanpa internet, lebih cepat)
+  // urutan pilihan: suara yang jelas dan tegas dulu (macOS/iOS, Android/Chrome, Windows)
+  const MALE = ['Daniel', 'Alex', 'Aaron', 'Arthur', 'Gordon', 'Oliver', 'Rishi', 'Google UK English Male', 'Microsoft David', 'Microsoft Mark', 'Male', 'Fred'];
+  const FEM = ['Samantha', 'Karen', 'Victoria', 'Moira', 'Tessa', 'Google US English', 'Google UK English Female', 'Microsoft Zira', 'Female', 'Fiona'];
+  const by = list => { for (const n of list) { const v = vs.filter(x => x.name.toLowerCase().includes(n.toLowerCase()) && !(list === MALE && /female/i.test(x.name))).sort((p, q) => loc(p) - loc(q))[0]; if (v) return v; } return null; };
+  const any = vs.slice().sort((p, q) => loc(p) - loc(q))[0];
+  ttsV.m = by(MALE) || any; ttsV.f = by(FEM) || ttsV.m;
+}
+if (TTS) { pickVoices(); try { TTS.addEventListener('voiceschanged', pickVoices); } catch { TTS.onvoiceschanged = pickVoices; } }
+let ttsPrimed = false;
+// iOS hanya mengizinkan suara TTS setelah sentuhan pertama: "pancing" dengan ucapan kosong
+function primeTTS() { if (!TTS || ttsPrimed) return; ttsPrimed = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; TTS.speak(u); } catch { /* */ } }
+// prio = suara milik pemain sendiri (memotong suara lain); suara lain dilewati kalau masih ada yang berbicara
+function say(text, god, vol, prio) {
+  const vv = opts.vo === false ? 0 : opts.vo === true || opts.vo === undefined ? 1 : +opts.vo;
+  if (!TTS || muted || vv <= 0.01 || vol < 0.2) return;
   try {
-    const t0 = actx.currentTime + 0.01, out = actx.createGain(), fa = actx.createBiquadFilter(), fb = actx.createBiquadFilter(), gb = actx.createGain(), lp = actx.createBiquadFilter(), gl = actx.createGain();
-    out.gain.value = 0.3 * vol;
-    fa.type = fb.type = 'bandpass'; fa.frequency.value = V.v[0]; fb.frequency.value = V.v[1]; fa.Q.value = 5; fb.Q.value = 8; gb.gain.value = 0.6;
-    lp.type = 'lowpass'; lp.frequency.value = 380; gl.gain.value = 0.18; // badan suara (nada dasar)
-    fa.connect(out); fb.connect(gb).connect(out); lp.connect(gl).connect(out); out.connect(bus || master);
-    let end = 0;
-    for (const [st, dur, a, b, c] of V.syl) {
-      const t = t0 + st, env = actx.createGain();
-      env.gain.setValueAtTime(0.0001, t); env.gain.exponentialRampToValueAtTime(1, t + 0.025); env.gain.setValueAtTime(1, t + dur * 0.55); env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      env.connect(fa); env.connect(fb); env.connect(lp);
-      // gergaji utama + sub-oktaf untuk suara serak
-      for (const [mul, gain] of [[1, 1], [0.5, V.gr]]) {
-        if (!gain) continue;
-        const o = actx.createOscillator(), og = actx.createGain();
-        o.type = 'sawtooth'; og.gain.value = gain;
-        o.frequency.setValueAtTime(V.f0 * a * mul, t); o.frequency.linearRampToValueAtTime(V.f0 * b * mul, t + dur * 0.3); o.frequency.linearRampToValueAtTime(V.f0 * c * mul, t + dur);
-        if (V.vib) { const l = actx.createOscillator(), lg = actx.createGain(); l.frequency.value = V.vib; lg.gain.value = V.f0 * 0.05 * mul; l.connect(lg).connect(o.frequency); l.start(t); l.stop(t + dur + 0.02); }
-        o.connect(og).connect(env); o.start(t); o.stop(t + dur + 0.02);
-      }
-      // desah "h" di awal suku kata
-      if (noiseBuf) { const n = actx.createBufferSource(), nf = actx.createBiquadFilter(), ng = actx.createGain(); n.buffer = noiseBuf; nf.type = 'bandpass'; nf.frequency.value = 1600; ng.gain.setValueAtTime(0.25, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.07); n.connect(nf).connect(ng).connect(out); n.start(t, Math.random() * 0.5); n.stop(t + 0.08); }
-      end = Math.max(end, st + dur);
-    }
-    setTimeout(() => { try { out.disconnect(); } catch { /* */ } }, (end + 0.3) * 1000);
+    if (!prio && (TTS.speaking || TTS.pending)) return;
+    const [g, pitch, rate] = VOICE[god] || VOICE.zeus, u = new SpeechSynthesisUtterance(text), v = ttsV[g] || ttsV.m;
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
+    u.pitch = pitch; u.rate = rate; u.volume = Math.max(0, Math.min(1, vol * vv));
+    if (prio && (TTS.speaking || TTS.pending)) { TTS.cancel(); setTimeout(() => TTS.speak(u), 40); } // tanpa jeda, sebagian browser membuang ucapan setelah cancel
+    else TTS.speak(u);
   } catch { /* tanpa suara */ }
 }
+// pembawa acara: hitung mundur, lolos, gugur, juara
+const NUM_EN = ['zero', 'one', 'two', 'three', 'four', 'five'];
+function announce(text, prio = true) { say(text, 'ann', 1, prio); }
+// bunyi pendamping emot (selain ucapan)
+const EMO_SFX = [
+  v => { noise(0.12, 0.08 * v, 'highpass', 2500); [784, 988, 1175].forEach((f, i) => setTimeout(() => beep(f, 0.12, 'triangle', 0.04 * v), 60 + i * 60)); },
+  v => [523, 659, 784, 659].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'sine', 0.04 * v), i * 110)),
+  v => beep(880, 0.16, 'sine', 0.04 * v, 220),
+  v => [0, 1, 2, 3].forEach(i => setTimeout(() => beep(700 - i * 60, 0.07, 'square', 0.02 * v), i * 90)),
+  v => { beep(140, 0.3, 'sawtooth', 0.05 * v, -40); noise(0.3, 0.05 * v, 'bandpass', 900, 2600); },
+  v => beep(1200, 0.4, 'sine', 0.04 * v, -800),
+  v => { beep(660, 0.08, 'triangle', 0.05 * v); setTimeout(() => beep(990, 0.14, 'triangle', 0.05 * v), 80); },
+  v => [1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.2, 'sine', 0.035 * v), i * 100)),
+];
 // bunyi khas tiap kekuatan (v = volume menurut jarak)
 const AB_SFX = {
   zeus: v => { noise(0.07, 0.16 * v, 'highpass', 2500); beep(1300, 0.18, 'square', 0.03 * v, -1000); setTimeout(() => noise(0.7, 0.13 * v, 'lowpass', 1400, 60), 70); },
@@ -346,11 +357,11 @@ const AB_SFX = {
   loki: v => { for (let i = 0; i < 5; i++) setTimeout(() => beep(500 + (i % 2) * 260, 0.12, 'sine', 0.045 * v, i % 2 ? -200 : 200), i * 70); },
   odin: v => { [262, 330, 392].forEach(f => beep(f, 0.9, 'sine', 0.04 * v)); noise(0.6, 0.05 * v, 'bandpass', 3000, 6000); },
 };
-function abSound(god, vol = 1) {
+function abSound(god, vol = 1, mine = false) {
   if (vol < 0.05) return;
   if (!noiseBuf) noise(0.01, 0.0001); // siapkan buffer derau
   (AB_SFX[god] || AB_SFX.zeus)(vol);
-  setTimeout(() => voice(god, vol), 40);
+  say(CALLS[god] || CALLS.zeus, god, vol, mine);
 }
 const hexRgb = c => `${c >> 16 & 255},${c >> 8 & 255},${c & 255}`;
 // HUD kekuatan disiapkan tiap ronde sesuai dewa pemain
@@ -358,14 +369,17 @@ function setupAbHud(god) {
   const a = ABILITIES[god] || ABILITIES.zeus, href = '#ab-' + (ABILITIES[god] ? god : 'zeus');
   $('abUse').setAttribute('href', href); $('abUseT').setAttribute('href', href);
   $('abName').textContent = a.name; $('abNm').textContent = a.name;
-  const sl = $('abSlot'); sl.style.setProperty('--ac', '#' + a.color.toString(16).padStart(6, '0')); sl.style.setProperty('--acr', hexRgb(a.color));
+  const sl = $('abSlot'); sl.style.setProperty('--ac', '#' + a.color.toString(16).padStart(6, '0')); sl.style.setProperty('--acr', hexRgb(a.color)); $('btnAb').style.setProperty('--acr', hexRgb(a.color));
+  G.buffDur = 0; G.buffOn = null;
   G.abP = -1;
 }
 function abCastFx(god) {
   const a = ABILITIES[god] || ABILITIES.zeus, el = $('abCast');
-  el.textContent = a.name + '!'; el.style.setProperty('--acr', hexRgb(a.color));
+  G.buffDur = a.dur || 0; G.buffEnd = performance.now() + (a.dur || 0) * 1000;
+  const me = G.ents.get(G.me); if (me) me.castT = 0.45;
+  el.textContent = CALLS[god] || a.name + '!'; el.style.setProperty('--acr', hexRgb(a.color));
   for (const x of [el, $('abSlot'), $('btnAb')]) { const c = x === el ? 'on' : 'cast'; x.classList.remove(c); void x.offsetWidth; x.classList.add(c); }
-  abSound(god, 1); buzz(40);
+  abSound(god, 1, true); buzz(40);
 }
 // suara suasana: derau tersaring yang berulang pelan (angin, ombak, gemuruh lava, gua)
 let ambNode = null;
@@ -633,7 +647,7 @@ if (!save.best || typeof save.best !== 'object') save.best = {};
 if (!TRAILS.some(x => x.id === save.trail) || !save.ownedT.includes(save.trail)) save.trail = 'asli';
 function persist() { try { localStorage.setItem('asg_save', JSON.stringify(save)); } catch { /* */ } }
 function addCoins(n) { save.coins += n; persist(); renderSkins(); }
-function addXp(n) { const before = levelOf(save.xp); save.xp += n; persist(); renderProfile(); renderSkins(); if (levelOf(save.xp) > before) { feed(`Naik ke Level ${levelOf(save.xp)}!`, 'star'); SFX.win(); } }
+function addXp(n) { const before = levelOf(save.xp); save.xp += n; persist(); renderProfile(); renderSkins(); if (levelOf(save.xp) > before) { const el = $('lvlUp'); el.innerHTML = `<b>${ico('star')}LEVEL ${levelOf(save.xp)}</b>`; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); [659, 784, 988, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.18, 'triangle', 0.07), 500 + i * 90)); setTimeout(() => announce('Level up!', false), 900); } }
 let coinShown = null, coinAnim = 0;
 function showCoins() {
   const el = $('coins'), to = save.coins;
@@ -777,11 +791,11 @@ function renderGods() {
     const b = document.createElement('button');
     b.className = 'god' + (g.id === G.god ? ' sel' : '');
     b.innerHTML = `${godIcon(g.id)}${g.name}`;
-    b.onclick = () => { G.god = g.id; renderGods(); renderSkins(); swapPreviewGod(); };
+    b.onclick = () => { G.god = g.id; renderGods(); renderSkins(); swapPreviewGod(); say(`I am ${g.name}!`, g.id, 0.9, true); };
     godsEl.appendChild(b);
   }
   const a = ABILITIES[G.god];
-  $('power').innerHTML = `${ico('bolt')}<span><b>${a.name}</b>${a.desc}</span>`;
+  $('power').innerHTML = `${ico('bolt')}<span><b>${a.name}</b>${a.desc}<span class="call">“${CALLS[G.god] || ''}”</span></span>`;
 }
 renderGods();
 renderSkins();
@@ -834,7 +848,7 @@ $('leaveBtn').onclick = () => { G.leaving = true; if (ws) ws.close(); };
 $('muteBtn').onclick = () => { initAudio(); setMuted(!muted); };
 $('muteBtn').classList.toggle('off', muted);
 // pengaturan (tersimpan di perangkat)
-const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH, ts: 1, us: 1, mv: 1, sv: 1, cap30: false, fps: false };
+const opts = { q: 'auto', sens: 1, invert: false, autoCam: IS_TOUCH, ts: 1, us: 1, mv: 1, sv: 1, vo: 1, cap30: false, fps: false };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('asg_opts') || '{}')); } catch { /* */ }
 function applyOpts() {
   if (quality.mode !== opts.q || !quality.inited) {
@@ -845,7 +859,7 @@ function applyOpts() {
   }
   document.documentElement.style.setProperty('--ts', opts.ts); $('optT').value = opts.ts;
   document.documentElement.style.setProperty('--us', opts.us); $('optU').value = opts.us;
-  $('optMV').value = opts.mv; $('optSV').value = opts.sv; $('optC').checked = !!opts.cap30; $('optF').checked = !!opts.fps;
+  $('optMV').value = opts.mv; $('optSV').value = opts.sv; $('optC').checked = !!opts.cap30; $('optF').checked = !!opts.fps; $('optV').value = opts.vo === false ? 0 : opts.vo === true || opts.vo === undefined ? 1 : opts.vo;
   $('fps').classList.toggle('hidden', !opts.fps); setVolumes();
   $('optQ').value = opts.q; $('optS').value = opts.sens; $('optI').checked = !!opts.invert; $('optA').checked = !!opts.autoCam;
   try { localStorage.setItem('asg_opts', JSON.stringify(opts)); } catch { /* */ }
@@ -863,6 +877,8 @@ $('optSV').oninput = e => { opts.sv = +e.target.value; applyOpts(); beep(660, 0.
 $('optSV').onchange = () => SFX.jump();
 $('optC').onchange = e => { opts.cap30 = e.target.checked; quality.acc = quality.n = 0; quality.lastAvg = 0; applyOpts(); };
 $('optF').onchange = e => { opts.fps = e.target.checked; applyOpts(); };
+$('optV').oninput = e => { opts.vo = +e.target.value; applyOpts(); };
+$('optV').onchange = () => { if (opts.vo > 0.01) say('Hello!', G.god, 1, true); else if (TTS) TTS.cancel(); };
 $('fsBtn').onclick = () => {
   const el = document.documentElement, on = document.fullscreenElement || document.webkitFullscreenElement;
   try { if (on) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (el.requestFullscreen || el.webkitRequestFullscreen).call(el); }
@@ -966,16 +982,16 @@ const ON = {
         flash('LOLOS! ' + fmtT(sec), 2000);
         if (!old || sec < old) { save.best[lv] = Math.round(sec * 10) / 10; persist(); feed(`Rekor baru di ${LEVELS[lv].name}: ${fmtT(sec)}` + (old ? ` (sebelumnya ${fmtT(old)})` : ''), 'star'); }
       } else flash('LOLOS!', 1800);
-      SFX.win(); glow('255,214,110');
+      SFX.win(); glow('255,214,110'); announce('Qualified!');
     }
-    feed(`${nameOf(m.id)} lolos (${m.n}/${m.Q})`, 'flag');
+    feed(`${nameOf(m.id)} lolos (${m.n}/${m.Q})`, 'flag', m.id);
   },
   dead(m) {
     const e = G.ents.get(m.id);
     G.alive = m.alive;
     if (e) { burst(e.pos, [0xffffff, 0xd9d4ee, 0xb9b0dd], 12, 3.5, FX_DUST); burst(e.pos, [0xffe07a, 0xffffff], 6, 6, FX_SPARK); ring(e.pos, 0xffffff, 2.2); deactivate(e, 'pop'); }
-    if (m.id === G.me) { flash('JATUH!', 1500); SFX.lose(); hurt(); }
-    feed(`${nameOf(m.id)} gugur · sisa ${m.alive}`, 'skull');
+    if (m.id === G.me) { flash('JATUH!', 1500); SFX.lose(); hurt(); announce('Eliminated!'); }
+    feed(`${nameOf(m.id)} gugur · sisa ${m.alive}`, 'skull', m.id);
   },
   picked(m) {
     const L = G.L;
@@ -990,6 +1006,7 @@ const ON = {
     if (!c) return;
     const a = ABILITIES[c.god] || ABILITIES.zeus;
     ring(c.pos, a.color, a.r || 2.5);
+    c.castT = 0.45; // pose menghentak tangan
     burst(c.pos, [a.color, 0xffffff], 14, 7);
     // efek khas
     const fx = { zeus: [10, 0], poseidon: [0, 2], athena: [0, 1], hades: [0, 0], apollo: [0, 1], ares: [0, 1], hermes: [0, 0], thor: [4, 1], loki: [0, 2], odin: [0, 1] }[c.god] || [0, 0];
@@ -1001,11 +1018,11 @@ const ON = {
     if (m.id === G.me || c.pos.distanceTo(camera.position) < 14) cam.shake = Math.max(cam.shake, a.area ? 0.35 : 0.15);
     if (a.dur) { c.auraT = a.dur; c.auraColor = a.color; }
     // suara: pemain sendiri sudah bersuara saat menekan tombol; dewa lain terdengar makin pelan menurut jarak
-    if (m.id === G.me) { glow(hexRgb(a.color)); if (performance.now() - (G.selfAbT || 0) > 1500) abSound(c.god, 1); }
+    if (m.id === G.me) { glow(hexRgb(a.color)); if (performance.now() - (G.selfAbT || 0) > 1500) abSound(c.god, 1, true); }
     else abSound(c.god, Math.pow(Math.max(0, 1 - c.pos.distanceTo(cam.look) / 30), 1.3) * 0.85);
     if (a.area) for (const e of G.ents.values()) {
       if (e === c || !e.local || !e.active) continue;
-      if (applyArea(a, c.pos.x, c.pos.y, c.pos.z, e) && e.id === G.me) { feed(`Kena ${a.name} dari ${c.name}!`, 'bolt'); hurt(); if (a.area === 'confuse') flash('KONTROL TERBALIK!', 1500); buzz(80); }
+      if (applyArea(a, c.pos.x, c.pos.y, c.pos.z, e) && e.id === G.me) { feed(`Kena ${a.name} dari ${c.name}!`, 'bolt', c.id); hurt(); if (a.area === 'confuse') flash('KONTROL TERBALIK!', 1500); buzz(80); }
     }
   },
   emo(m) { const e = G.ents.get(m.id); if (e && e.active) showEmo(e, m.k); },
@@ -1040,6 +1057,8 @@ const ON = {
     $('end').classList.toggle('win', m.final ? m.winner === G.me : was && iq);
     $('end').classList.remove('hidden'); $('card').classList.add('hidden'); $('big').textContent = '';
     if (was && !m.final) (iq ? SFX.win : SFX.lose)();
+    if (m.final) announce(m.winner === G.me ? 'Victory! You are the champion!' : 'Game over!');
+    else if (was && iq && G.round && G.round.type === 'survival') announce('Survived!');
     if (m.final && m.winner) {
       (m.winner === G.me ? SFX.win : SFX.lose)();
       const e = G.ents.get(m.winner);
@@ -1078,22 +1097,32 @@ function makeLabel(text, mine, wins) {
 }
 
 // stiker emoji di atas kepala
-const EMOS = ['🎉', '💃', '👋', '😂', '😡', '😱', '👍', '😀'], emoTex = {};
+// stiker emot: gambar orisinal di /assets/emotes/e0..e7.svg (pesta, menari, melambai, tertawa, marah, takut, jempol, suka)
+const EMO_N = 8, emoTex = {}, emoImg = [];
+// gerak badan untuk tiap stiker: sorak, menari, melambai, tertawa, marah, takut, jempol, suka
+const EMO_ANIM = [5, 8, 9, 10, 11, 12, 14, 15];
+for (let k = 0; k < EMO_N; k++) { const im = new Image(); im.onload = () => { if (emoTex[k]) drawEmo(k); }; im.src = `/assets/emotes/e${k}.svg`; emoImg[k] = im; }
+function drawEmo(k) {
+  const c = emoTex[k].image, x = c.getContext('2d');
+  x.clearRect(0, 0, 128, 128);
+  x.fillStyle = 'rgba(255,255,255,0.95)'; x.strokeStyle = '#2a1e4a'; x.lineWidth = 6;
+  x.beginPath(); x.arc(64, 58, 50, 0, 7); x.fill(); x.stroke();
+  x.beginPath(); x.moveTo(50, 104); x.lineTo(64, 124); x.lineTo(78, 104); x.fill();
+  if (emoImg[k].complete && emoImg[k].naturalWidth) x.drawImage(emoImg[k], 14, 8, 100, 100);
+  emoTex[k].needsUpdate = true;
+}
 function showEmo(e, k) {
-  const ch = EMOS[k] || EMOS[0];
+  const ch = k >= 0 && k < EMO_N ? k | 0 : 0;
   if (!emoTex[ch]) {
     const c = document.createElement('canvas'); c.width = c.height = 128;
-    const x = c.getContext('2d');
-    x.fillStyle = 'rgba(255,255,255,0.95)'; x.strokeStyle = '#2a1e4a'; x.lineWidth = 6;
-    x.beginPath(); x.arc(64, 58, 50, 0, 7); x.fill(); x.stroke();
-    x.beginPath(); x.moveTo(50, 104); x.lineTo(64, 124); x.lineTo(78, 104); x.fill();
-    x.font = '62px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(ch, 64, 62);
-    emoTex[ch] = new THREE.CanvasTexture(c); emoTex[ch].colorSpace = THREE.SRGBColorSpace;
+    emoTex[ch] = new THREE.CanvasTexture(c); emoTex[ch].colorSpace = THREE.SRGBColorSpace; drawEmo(ch);
   }
   if (!e.bubble) { e.bubble = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, fog: false })); e.bubble.renderOrder = 11; e.model.add(e.bubble); }
   e.bubble.material.map = emoTex[ch]; e.bubble.material.needsUpdate = true; emoTex[ch].needsUpdate = true;
-  e.bubble.visible = true; e.bubbleT = 2.2;
-  if (e.id !== G.me) beep(980, 0.06, 'sine', 0.03);
+  e.bubble.visible = true; e.bubbleT = 2.2; e.reactT = 1.8; e.reactK = ch;
+  // suara emot: bunyi pendamping + ucapan dengan suara dewanya; makin jauh makin pelan
+  const mine = e.id === G.me, vol = mine ? 1 : Math.pow(Math.max(0, 1 - e.pos.distanceTo(cam.look) / 26), 1.3) * 0.8;
+  if (vol > 0.05) { EMO_SFX[ch](vol); say(EMO_SAY[ch], e.god, vol, mine); }
 }
 
 // how: 'up' = lolos (terangkat sambil berputar jadi cahaya), 'pop' = gugur (mengecil dengan kepulan); kosong = langsung hilang
@@ -1200,6 +1229,7 @@ function syncLobbyEnts() {
 const cdTxtPc = me => me.abCd > 0 ? String(Math.ceil(me.abCd)) : '';
 function startRoundUI(m, lv, n) {
   const info = LEVELS[lv];
+  setTimeout(() => announce(m.type === 'final' ? 'Final round!' : `Round ${NUM_EN[m.idx + 1] || m.idx + 1}!`), 600);
   setupAbHud((G.roster.get(G.me) || {}).god);
   $('rname').innerHTML = `Ronde <b>${m.idx + 1}/${m.total}</b><span class="mn">· ${esc(info.name)}</span>`;
   $('goal').textContent = info.goal;
@@ -1219,9 +1249,11 @@ function hideCard() { const c = $('card'); if (c.classList.contains('hidden') ||
 function glow(c) { const el = $('glow'); el.style.setProperty('--gc', c); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
 function cut() { const f = $('fade'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on'))); }
 function hurt() { const el = $('hurt'); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
-function feed(text, ic) {
-  const el = $('feed'), d = document.createElement('div');
-  d.innerHTML = (ic ? ico(ic) : '') + '<span>' + esc(text) + '</span>'; el.appendChild(d);
+// who (opsional): id pemain yang dibicarakan -> potret dewanya ditampilkan, baris tentang dirimu bertepi emas
+function feed(text, ic, who) {
+  const el = $('feed'), d = document.createElement('div'), pt = who !== undefined && PORTRAITS[(G.roster.get(who) || G.ents.get(who) || {}).god];
+  if (who !== undefined && who === G.me) d.className = 'me';
+  d.innerHTML = (pt ? `<img src="${pt}" alt="">` : '') + (ic ? ico(ic) : '') + '<span>' + esc(text) + '</span>'; el.appendChild(d);
   while (el.children.length > 4) el.firstChild.remove();
   setTimeout(() => d.remove(), 4800);
 }
@@ -1254,9 +1286,12 @@ window.addEventListener('keydown', e => {
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyE' || e.code === 'KeyF') diveQ = true;
   if (e.code === 'KeyQ') abQ = true;
   if (e.code === 'KeyR') emoteQ = 5;
-  if (e.code === 'Digit1') emoteQ = 8;
-  if (e.code === 'Digit2') emoteQ = 9;
-  if (/^Digit[3-6]$/.test(e.code)) send({ t: 'emo', k: +e.code.slice(5) });
+  if (e.code === 'Digit1' && tray.classList.contains('hidden')) emoteQ = 8;
+  if (e.code === 'Digit2' && tray.classList.contains('hidden')) emoteQ = 9;
+  if (/^Digit[3-6]$/.test(e.code) && tray.classList.contains('hidden')) sendEmo(+e.code.slice(5));
+  if (e.code === 'KeyT') openTray(tray.classList.contains('hidden'));
+  if (!tray.classList.contains('hidden') && /^Digit[1-8]$/.test(e.code)) { sendEmo(+e.code.slice(5) - 1); return; }
+  if (e.code === 'Escape') openTray(false);
   if (e.code.startsWith('Arrow')) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -1304,7 +1339,20 @@ $('btnAb').addEventListener('pointerdown', e => { abQ = true; e.preventDefault()
 let emoteCycle = 0;
 $('btnEmote').addEventListener('pointerdown', e => { emoteQ = [5, 8, 9][emoteCycle++ % 3]; e.preventDefault(); });
 let emoCycle = 0;
-$('btnEmo').addEventListener('pointerdown', e => { send({ t: 'emo', k: 3 + (emoCycle++ % 5) }); e.preventDefault(); });
+// baki stiker: 8 gambar; HP lewat tombol stiker, PC lewat tombol T lalu klik atau angka 1-8
+const tray = $('emoTray');
+tray.innerHTML = Array.from({ length: 8 }, (_, k) => `<button data-k="${k}" aria-label="Stiker ${k + 1}"><img src="/assets/emotes/e${k}.svg" alt=""><small>${k + 1}</small></button>`).join('');
+let trayTimer = 0, emoSentAt = 0;
+function openTray(on) {
+  tray.classList.toggle('hidden', !on); clearTimeout(trayTimer);
+  if (on) trayTimer = setTimeout(() => tray.classList.add('hidden'), 5000);
+}
+function sendEmo(k) {
+  const now = performance.now(); if (now - emoSentAt < 850) return; // server juga membatasi; ini supaya tombol tidak terasa mati
+  emoSentAt = now; send({ t: 'emo', k }); openTray(false);
+}
+tray.addEventListener('pointerdown', e => { const b = e.target.closest('button'); if (b) { sendEmo(+b.dataset.k); e.preventDefault(); e.stopPropagation(); } });
+$('btnEmo').addEventListener('pointerdown', e => { openTray(tray.classList.contains('hidden')); e.preventDefault(); });
 
 const inp = { x: 0, z: 0, jump: false, dive: false };
 const NOINP = { x: 0, z: 0, jump: false, dive: false };
@@ -1326,7 +1374,7 @@ function pollPad(dt) {
   if (hit(2) || hit(1) || hit(7)) diveQ = true;
   if (hit(3) || hit(6)) abQ = true;
   if (hit(4)) emoteQ = [5, 8, 9][emoteCycle++ % 3];
-  if (hit(5)) send({ t: 'emo', k: 3 + (emoCycle++ % 5) });
+  if (hit(5)) sendEmo(3 + (emoCycle++ % 5));
   for (let i = 0; i < 16; i++) pad.prev[i] = down(i);
 }
 function readInput() {
@@ -1379,7 +1427,7 @@ function tickGame(dt, now) {
       }
       if (mine) abQ = false;
       stepEnt(e, i, dt, L, t);
-      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); glow('255,214,110'); quest('cp'); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); ring(e.pos, 0xffe07a, 3); burst(e.pos, [0xffe07a, 0xffffff], 10, 4, FX_RISE); }
+      if (e.cp > (e.cpSeen || 0)) { e.cpSeen = e.cp; flash('CHECKPOINT!', 900); glow('255,214,110'); announce('Checkpoint!', false); quest('cp'); beep(660, 0.12, 'triangle', 0.08, 330); burst(e.pos, CONFETTI, 12, 6); ring(e.pos, 0xffe07a, 3); burst(e.pos, [0xffe07a, 0xffffff], 10, 4, FX_RISE); }
       if (e.speedT > 0 && e.grounded) burst(e.pos, [0x7fe6ff, 0xffffff], 1, 1.5, FX_GLOW);
       if (e.anim === 1 && (e.stepAcc = (e.stepAcc || 0) + dt * Math.hypot(e.vel.x, e.vel.z)) > 1.7) { e.stepAcc = 0; SFX.step(); }
       if (emoteQ) { e.emoteT = emoteQ === 5 ? 1.6 : 2.6; e.emoteK = emoteQ === true ? 5 : emoteQ; if (mine) send({ t: 'emo', k: { 8: 1, 9: 2 }[emoteQ] || 0 }); emoteQ = false; }
@@ -1424,8 +1472,11 @@ function tickGame(dt, now) {
     e.prevAnim = e.anim;
     if (e.bubbleT > 0) {
       e.bubbleT -= dt;
-      const k = Math.min(1, (2.2 - e.bubbleT) * 9) * Math.min(1, e.bubbleT * 5);
-      e.bubble.scale.setScalar(1.25 * (0.3 + 0.7 * k)); e.bubble.position.y = 3.3 + Math.sin(tt * 5) * 0.06; e.bubble.visible = e.bubbleT > 0;
+      const age = 2.2 - e.bubbleT, q = Math.min(1, age / 0.28) - 1, pop = 1 + 2.7 * q * q * q + 1.7 * q * q; // membal (ease-out-back)
+      e.bubble.scale.setScalar(1.25 * Math.max(0.05, pop));
+      e.bubble.material.rotation = Math.sin(age * 11) * 0.16 * Math.exp(-age * 2.2);
+      e.bubble.material.opacity = Math.min(1, e.bubbleT / 0.3);
+      e.bubble.position.y = 3.3 + age * 0.12 + Math.sin(tt * 5) * 0.05; e.bubble.visible = e.bubbleT > 0;
     }
     if (e.auraT > 0) {
       e.auraT -= dt;
@@ -1459,7 +1510,10 @@ function tickGame(dt, now) {
       if (e.id === G.me) { const p = t < 0 && t > -3.2 ? 1.35 + Math.sin(tt * 9) * 0.12 : 1; e.label.scale.set(LBL_W * p, LBL_H * p, 1); e.label.position.y = LBL_Y + (p - 1) * 0.5; }
     }
     if (cd > 95 * 95 && e.id !== G.me) continue;
-    const shown = G.roundOver && G.outcome ? (G.outcome.has(e.id) ? 5 : 6) : (t < 0 && t > -3 && e.anim === 0 ? 7 : e.anim);
+    e.castT = Math.max(0, (e.castT || 0) - dt); e.reactT = Math.max(0, (e.reactT || 0) - dt);
+    let shown = G.roundOver && G.outcome ? (G.outcome.has(e.id) ? 5 : 6) : (t < 0 && t > -3 && e.anim === 0 ? 7 : e.anim);
+    if (e.castT > 0 && shown !== 3 && shown !== 4) shown = 13;
+    else if (e.reactT > 0 && (shown === 0 || shown === 7)) shown = EMO_ANIM[e.reactK] ?? shown; // diam: badan ikut bereaksi sesuai stiker
     e.landT = Math.max(0, (e.landT || 0) - dt); ax.land = e.landT / LAND_T;
     animateGod(e.model, shown, tt, ax);
     const gy = L.groundAt(e.pos.x, e.pos.z, e.pos.y + 0.6);
@@ -1567,6 +1621,7 @@ function tickGame(dt, now) {
   sun.position.copy(sun.target.position).add(SUN_OFF);
   if (t > 1) tuneQuality(dt);
   if (QS.has('ab') && t > +QS.get('ab') && G.abTestR !== R) { G.abTestR = R; abQ = true; }
+  if (QS.has('emo') && t > +QS.get('emo') && G.emoTestR !== R) { G.emoTestR = R; [3, 4, 5, 6, 7, 0, 1, 2].forEach((k, i) => setTimeout(() => send({ t: 'emo', k }), i * 900)); }
   if (QS.has('die') && t > +QS.get('die') && me && me.active && !me.reported) { me.reported = true; send({ t: 'dead', id: me.id }); }
   if (QS.has('tp') && t > 0 && me && !me.tpDone) { const [z, y] = QS.get('tp').split(',').map(Number); me.pos.set(0, (y || 0) + 0.5, z); me.vel.set(0, 0, 0); me.cp = L.cps.length - 1; me.tpDone = true; }
   const spectating = target && target.id !== G.me && !G.roundOver;
@@ -1582,13 +1637,17 @@ function tickGame(dt, now) {
     G.hintI = G.hintI || 0;
     if (G.hintI < hints.length && t > hints[G.hintI][0]) { feed(hints[G.hintI][1], 'info'); if (++G.hintI === hints.length) { save.tut++; persist(); } }
   }
+  // efek kekuatan yang sedang berjalan (perisai, melayang, lari kencang): cincin durasi di HUD
+  { const left = G.buffDur ? (G.buffEnd - performance.now()) / 1000 : 0, on = left > 0 && !!(me && me.active);
+    if (on !== !!G.buffOn) { G.buffOn = on; $('abSlot').classList.toggle('buff', on); $('btnAb').classList.toggle('buff', on); }
+    if (on) $('abSlot').style.setProperty('--b', Math.round(left / G.buffDur * 100)); }
   // cincin pengisian kekuatan diperbarui tiap frame supaya mulus
   if (me && ABILITIES[me.god]) { const p = Math.round((1 - Math.max(0, me.abCd) / AB_CD) * 200) / 2; if (p !== G.abP) { G.abP = p; $('abSlot').style.setProperty('--p', p); } }
   // hitung mundur
   if (t < 0) {
     const n = Math.ceil(-t);
-    if (n <= 3 && n !== G.lastCount) { G.lastCount = n; flash(String(n), 0); SFX.tick(); hideCard(); }
-  } else if (G.lastCount !== 0) { G.lastCount = 0; flash('MULAI!', 900); SFX.go(); hideCard(); cam.fov += 8; }
+    if (n <= 3 && n !== G.lastCount) { G.lastCount = n; flash(String(n), 0); SFX.tick(); hideCard(); announce(NUM_EN[n][0].toUpperCase() + NUM_EN[n].slice(1) + '!'); }
+  } else if (G.lastCount !== 0) { G.lastCount = 0; flash('MULAI!', 900); SFX.go(); hideCard(); cam.fov += 8; announce('Go!'); }
 
   hudAcc += dt;
   if (hudAcc > 0.2) {
@@ -1743,24 +1802,13 @@ Promise.allSettled([loadGodAssets().then(r => { $('loadFill').style.width = '70%
 if (QS.has('auto')) {
   pickMode(QS.get('mode') === 'solo' ? 'solo' : 'lan');
   $('name').value = 'Tester';
+  if (QS.has('god') && GODS.some(g => g.id === QS.get('god'))) G.god = QS.get('god');
   setTimeout(() => $('joinBtn').click(), 1200);
   if (!QS.has('nostart')) { let tries = 0; const iv = setInterval(() => { if (G.phase === 'play' || ++tries > 15) return clearInterval(iv); if (G.me && G.hostId === G.me && G.phase === 'lobby') send({ t: 'start', level: QS.has('level') ? +QS.get('level') : undefined }); }, 1500); }
 }
 enterMenuScene();
 if (!QS.has('auto')) show('mode');
-// tes suara tanpa speaker: render teriakan tiap dewa di OfflineAudioContext lalu laporkan puncak & RMS (dibanding bunyi 'hit')
-if (QS.has('voicetest')) (async () => {
-  const res = [];
-  for (const g of [...Object.keys(VOICES), '_hit']) {
-    const oc = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100 * 1.2, 44100), keep = [actx, master, bus, noiseBuf];
-    actx = oc; master = bus = oc.destination; noiseBuf = null;
-    try { noise(0.01, 0.0001); if (g === '_hit') SFX.hit(); else voice(g, 1); } catch (err) { res.push(g + ' ERR ' + err); }
-    [actx, master, bus, noiseBuf] = keep;
-    const d = (await oc.startRendering()).getChannelData(0); let pk = 0, sq = 0, n = 0;
-    for (const v of d) { pk = Math.max(pk, Math.abs(v)); if (Math.abs(v) > 0.002) { sq += v * v; n++; } }
-    res.push(`${g} peak=${pk.toFixed(3)} rms=${Math.sqrt(sq / Math.max(1, n)).toFixed(3)} dur=${(n / 44100).toFixed(2)}s`);
-  }
-  report('voicetest ' + res.join(' | '));
-})().catch(err => report('voicetest ERR ' + (err.stack || err)));
+// tes: laporkan suara TTS yang dipilih dan ucapkan satu teriakan
+if (QS.has('ttstest')) setTimeout(() => { pickVoices(); report('tts ' + (TTS ? `voices=${TTS.getVoices().length} m=${ttsV.m && ttsV.m.name} f=${ttsV.f && ttsV.f.name}` : 'tidak ada')); say(CALLS.zeus, 'zeus', 1, true); }, 2500);
 if (QS.has('ui')) { pickMode(QS.get('mode') === 'solo' ? 'solo' : 'lan'); const tb = $('tabs').querySelector(`[data-tab="${QS.get('ui')}"]`); if (tb) tb.click(); if (QS.get('ui') === 'all') { let i = 0; setInterval(() => $('tabs').children[++i % 3].click(), shot.every); } }
 requestAnimationFrame(frame);

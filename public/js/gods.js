@@ -460,6 +460,18 @@ function animateRig(g, anim, t, extra) {
   } else if (anim === 7) { // siap-siap sebelum start: kuda-kuda sambil memantul
     const h = Math.abs(Math.sin(t * 7 + sd));
     bx = 0.3; hx = -0.25; al = 0.7; ar = -0.5; azl = azr = 0.35; ll = -0.35; lr = 0.3; by = h * 0.06; sy = 0.95 + h * 0.03;
+  } else if (anim === 10) { // tertawa: badan terdorong ke belakang, terguncang, tangan memegang perut
+    const sh = Math.sin(t * 30); bx = -0.22 + sh * 0.05; by = Math.abs(Math.sin(t * 15)) * 0.05; azl = azr = 0.25; al = ar = -0.6; hx = -0.38 + sh * 0.06; rz = Math.sin(t * 15) * 0.05; eye = 0.15;
+  } else if (anim === 11) { // marah: menghentak kaki bergantian, badan condong, tangan kaku
+    const st2 = Math.sin(t * 12); ll = Math.max(0, st2) * 0.6; lr = Math.max(0, -st2) * 0.6; azl = azr = 0.35; al = ar = 0.3; bx = 0.22; hx = 0.18; rz = st2 * 0.06; by = Math.abs(st2) * 0.05; eye = 0.6;
+  } else if (anim === 12) { // takut: menggigil, tangan menutup wajah, badan mengkerut
+    rz = Math.sin(t * 45) * 0.04; azl = azr = 1.15; al = ar = -1.0; bx = -0.15; sy = 0.93; ll = 0.15; lr = -0.15; eye = 1.95; hx = 0.1;
+  } else if (anim === 13) { // mengeluarkan kekuatan: kedua tangan menghentak ke depan-atas
+    azl = azr = 1.0; al = ar = -1.4; bx = -0.18; hx = -0.28; by = 0.1; sy = 1.06; eye = 1.25;
+  } else if (anim === 14) { // jempol: satu tangan maju ke atas, kepala miring
+    azr = 0.6; ar = -1.3; azl = 0.1; hy = 0.25; hx = -0.1; rz = 0.06; by = Math.abs(Math.sin(t * 6)) * 0.03; eye = 0.9;
+  } else if (anim === 15) { // suka: bergoyang pelan sambil memeluk diri
+    const sw = Math.sin(t * 4); rz = sw * 0.15; azl = azr = 0.5; al = ar = -0.95; hy = sw * 0.2; hx = -0.1; eye = 0.5; by = Math.abs(sw) * 0.03;
   } else { // diam: bernapas, menoleh, memindah tumpuan
     const br = Math.sin(t * 2.2 + sd);
     sy = 1 + br * 0.018; by = 0; azl = azr = 0.1 + br * 0.05;

@@ -35,7 +35,13 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 ## Mode tes
 `DEBUG=1 node server.js`, lalu buka `http://localhost:3000/?auto=1&level=N` untuk langsung masuk ke map nomor N (0–11).
 Tambahkan `&shot=3&ttl=30` supaya halaman mengirim screenshot tiap 3 detik ke folder `SHOT_DIR` dan menutup dirinya setelah 30 detik; `?lineup=1` menampilkan barisan semua dewa di menu.
-`&dom=1` ikut mengirim salinan HTML halaman (`dom_NN.png`, isinya HTML) untuk memeriksa tampilan menu/HUD; `&ui=god|style|quest` membuka tab menu; `&die=3` membuat pemain gugur setelah 3 detik (ronde bertahan). `&ab=2` memakai kekuatan 2 detik setelah ronde mulai; `?voicetest=1&shot=5` merender teriakan tiap dewa tanpa speaker dan mencatat kerasnya di log.
+`&dom=1` ikut mengirim salinan HTML halaman (`dom_NN.png`, isinya HTML) untuk memeriksa tampilan menu/HUD; `&ui=god|style|quest` membuka tab menu; `&die=3` membuat pemain gugur setelah 3 detik (ronde bertahan). `&ab=2` memakai kekuatan 2 detik setelah ronde mulai; `&god=athena` memilih dewa untuk tes; `&emo=3` mengirim kedelapan stiker emot bergantian mulai detik ke-3; `?ttstest=1&shot=5` mencatat suara TTS yang dipilih browser.
+
+## Intro studio
+Saat game dibuka, logo ONIX Studio tampil sekitar 3 detik (ketuk/tekan tombol apa saja untuk melewati) sebelum layar muat dan menu. Gambarnya ada di `public/assets/intro` (versi mendatar dan tegak, dipilih otomatis sesuai layar). Mode tes `?auto=1` melewati intro; tambahkan `&intro=1` untuk tetap menampilkannya.
+
+## Suara karakter & stiker
+Teriakan kekuatan ("Thunder Strike!" dan lainnya) serta ucapan emot memakai suara TTS bawaan perangkat pemain lewat Web Speech API, dengan nada dan kecepatan berbeda tiap dewa; volumenya diatur (atau dimatikan) di Pengaturan → Suara karakter. Pembawa acara ikut bersuara saat hitung mundur, lolos, gugur, dan juara. Stiker dipilih dari baki (tombol `T` di PC, tombol stiker di HP). Stiker emot adalah gambar SVG orisinal di `public/assets/emotes`.
 
 ## Font
 Tulisan memakai Fredoka (SIL Open Font License 1.1, `public/assets/fonts/OFL.txt`), dibundel di `public/assets/fonts` supaya tetap tampil tanpa internet.
