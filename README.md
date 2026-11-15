@@ -35,7 +35,10 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 ## Mode tes
 `DEBUG=1 node server.js`, lalu buka `http://localhost:3000/?auto=1&level=N` untuk langsung masuk ke map nomor N (0–11).
 Tambahkan `&shot=3&ttl=30` supaya halaman mengirim screenshot tiap 3 detik ke folder `SHOT_DIR` dan menutup dirinya setelah 30 detik; `?lineup=1` menampilkan barisan semua dewa di menu.
-`&dom=1` ikut mengirim salinan HTML halaman (`dom_NN.png`, isinya HTML) untuk memeriksa tampilan menu/HUD; `&ui=god|style|quest` membuka tab menu; `&die=3` membuat pemain gugur setelah 3 detik (ronde bertahan). `&ab=2` memakai kekuatan 2 detik setelah ronde mulai; `&god=athena` memilih dewa untuk tes; `&emo=3` mengirim kedelapan stiker emot bergantian mulai detik ke-3; `?ttstest=1&shot=5` mencatat suara TTS yang dipilih browser.
+`&dom=1` ikut mengirim salinan HTML halaman (`dom_NN.png`, isinya HTML) untuk memeriksa tampilan menu/HUD; `&ui=god|style|quest` membuka tab menu; `&die=3` membuat pemain gugur setelah 3 detik (ronde bertahan). `&ab=2` memakai kekuatan 2 detik setelah ronde mulai; `&god=athena` memilih dewa untuk tes; `&fx=2` memunculkan bintang pusing, tulisan komik, lalu lampu sorot juara pada pemain sendiri; `&emo=3` mengirim kedelapan stiker emot bergantian mulai detik ke-3; `?ttstest=1&shot=5` mencatat suara TTS yang dipilih browser.
+
+## Selalu mendatar
+Di HP game selalu tampil mendatar. Sentuhan pertama membuka layar penuh dan mengunci layar mendatar (Android/Chrome, juga saat dipasang sebagai aplikasi). Di perangkat yang tidak bisa dikunci (iPhone), seluruh tampilan diputar 90° saat HP dipegang tegak, termasuk sentuhan, joystick, dan geser menu.
 
 ## Intro studio
 Saat game dibuka, logo ONIX Studio tampil sekitar 3 detik (ketuk/tekan tombol apa saja untuk melewati) sebelum layar muat dan menu. Gambarnya ada di `public/assets/intro` (versi mendatar dan tegak, dipilih otomatis sesuai layar). Mode tes `?auto=1` melewati intro; tambahkan `&intro=1` untuk tetap menampilkannya.
