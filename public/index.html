@@ -94,7 +94,12 @@ addEventListener('resize', __lay);
 
   /* layar mode */
   #mode .panel { padding:16px 14px 14px; }
-  .modes { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+  .modes { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:14px; }
+  .mbtn.on { background:linear-gradient(160deg,rgba(120,230,150,.28),rgba(120,230,150,.07)); } .mbtn.on .ico { color:#8ff0a8; }
+  .mbtn.on.live span::before { content:''; display:inline-block; width:7px; height:7px; margin-right:5px; border-radius:50%; background:#5fe07a; box-shadow:0 0 6px #5fe07a; vertical-align:1px; animation:livePulse 1.6s ease-in-out infinite; }
+  @keyframes livePulse { 50% { opacity:.35; } }
+  #addr .sub { color:var(--mute); font-size:.92em; } #addr .ico { width:1.1em; height:1.1em; vertical-align:-.18em; color:var(--gold); }
+  #lobbyNote .cd { color:var(--gold); font-size:1.25em; } #lobbyNote .cd.hot { color:#ff8a5c; display:inline-block; animation:cdHot .5s ease-in-out infinite alternate; } @keyframes cdHot { to { transform:scale(1.18); } }
   .mbtn { display:flex; flex-direction:column; align-items:center; gap:3px; padding:14px 8px 12px; border-radius:16px; border:1px solid rgba(255,255,255,.2); color:#fff;
     background:linear-gradient(160deg,rgba(255,207,90,.26),rgba(255,207,90,.07)); transition:transform .1s, background .15s; }
   .mbtn .ico { width:30px; height:30px; margin-bottom:3px; color:var(--gold); stroke-width:1.8; }
@@ -532,6 +537,7 @@ addEventListener('resize', __lay);
   <symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 21V4M6 4.500h11l-2.500 3.800L17 12H6"/></symbol>
   <symbol id="i-skull" viewBox="0 0 24 24"><path d="M12 3.500c-4.400 0-7.500 3-7.500 7 0 2.500 1.200 4.300 3 5.400V19h9v-3.100c1.800-1.100 3-2.900 3-5.400 0-4-3.100-7-7.500-7zM10 19v-2M14 19v-2"/><circle cx="9" cy="11" r="1.300"/><circle cx="15" cy="11" r="1.300"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.500 12s3.500-6.500 9.500-6.500S21.500 12 21.500 12s-3.500 6.500-9.500 6.500S2.500 12 2.500 12z"/><circle cx="12" cy="12" r="2.800"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.600 2.600 3.800 5.600 3.800 9s-1.200 6.400-3.800 9c-2.600-2.600-3.800-5.600-3.800-9S9.400 5.600 12 3z"/></symbol>
   <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2.500 9a14 14 0 0 1 19 0M5.800 12.600a9 9 0 0 1 12.400 0M9 16.100a4.300 4.300 0 0 1 6 0"/><circle cx="12" cy="19.300" r=".9"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.500 2.800v5.700c0 4.500-3 7.700-7.500 9.500-4.500-1.800-7.500-5-7.500-9.500V5.800z"/></symbol>
   <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 9h10.500a2.800 2.800 0 1 0-2.700-3.500M3 13h15a2.800 2.800 0 1 1-2.700 3.500M3 17h7"/></symbol>
@@ -602,6 +608,7 @@ addEventListener('resize', __lay);
     <div class="modes">
       <button class="mbtn" id="modeSolo"><svg class="ico"><use href="#i-user"/></svg><b>Main Sendiri</b><span>Lawan bot</span></button>
       <button class="mbtn alt" id="modeLan"><svg class="ico"><use href="#i-users"/></svg><b>Main Bareng</b><span>WiFi yang sama</span></button>
+      <button class="mbtn on" id="modeOnline"><svg class="ico"><use href="#i-globe"/></svg><b>Main Online</b><span id="onlineN">Semua orang</span></button>
     </div>
     <div class="credit">© ONIX Studio · v1.0.0</div>
   </div>

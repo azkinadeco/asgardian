@@ -1,0 +1,9 @@
+# Deploy satu klik di Render (render.com): New > Blueprint > pilih repo ini
+services:
+  - type: web
+    name: asgardian
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/online

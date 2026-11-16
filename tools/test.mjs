@@ -92,6 +92,18 @@ try {
   t1.send({ t: 'emo', k: 4 }); t1.send({ t: 'emo', k: 5 }); await sleep(300);
   check(t2.got.filter(m => m.t === 'emo').length === 1 && t2.find('emo').k === 4, 'stiker emoji diteruskan ke pemain lain dan dibatasi lajunya');
   t1.ws.close(); t2.ws.close();
+  // mode online: semua pemain dikumpulkan ke room publik yang sama, mulai otomatis, nama kasar disaring
+  const o1 = client({ name: 'O1', mode: 'online' }); await sleep(300);
+  const o2 = client({ name: 'kontol', mode: 'online' }); await sleep(500);
+  const ol = o1.got.filter(m => m.t === 'lobby').pop();
+  check(ol && ol.online && ol.players.length === 2 && o2.find('welcome')?.mode === 'online', 'mode online: dua pemain masuk room publik yang sama');
+  check(ol && ol.autoAt > Date.now() && ol.autoAt - Date.now() <= 21000, 'mode online: hitung mundur mulai otomatis terpasang (2 pemain: ±20 detik)');
+  check(!ol.players.some(p => /kontol/i.test(p.name)), 'nama kasar diganti nama netral');
+  o1.send({ t: 'bots', n: 0 }); o1.send({ t: 'start' }); await sleep(400);
+  check(!o1.find('round'), 'mode online: pemain tidak bisa memulai/mengatur bot sendiri');
+  const api = await fetch('http://localhost:' + PORT + '/api/online').then(r => r.json());
+  check(api.players === 2, 'jumlah pemain online terbaca (' + api.players + ')');
+  o1.ws.close(); o2.ws.close();
   for (const x of [a, b, c, lan, solo]) x.ws.close();
 } catch (e) { check(false, 'tes server melempar error: ' + e.message); }
 srv.kill();

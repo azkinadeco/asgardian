@@ -882,14 +882,21 @@ $('startBtn').onclick = () => send({ t: 'start', level: $('mapSel').value === ''
 G.mode = 'lan';
 function pickMode(mode) {
   G.mode = mode;
-  $('menuTitle').textContent = mode === 'solo' ? 'MAIN SENDIRI' : 'MAIN BARENG';
-  $('joinBtn').textContent = mode === 'solo' ? 'LANJUT' : 'MASUK';
-  $('roomRow').classList.toggle('hidden', mode === 'solo');
+  $('menuTitle').textContent = mode === 'solo' ? 'MAIN SENDIRI' : mode === 'online' ? 'MAIN ONLINE' : 'MAIN BARENG';
+  $('joinBtn').textContent = mode === 'solo' ? 'LANJUT' : mode === 'online' ? 'CARI GAME' : 'MASUK';
+  $('roomRow').classList.toggle('hidden', mode === 'solo' || mode === 'online');
   $('err').className = ''; $('err').textContent = '';
   show('menu');
 }
 $('modeSolo').onclick = () => { initAudio(); pickMode('solo'); };
 $('modeLan').onclick = () => { initAudio(); pickMode('lan'); };
+$('modeOnline').onclick = () => { initAudio(); pickMode('online'); };
+// jumlah pemain online di tombol mode (diperbarui selama layar mode terbuka)
+function pollOnline() {
+  if ($('mode').classList.contains('hidden') || document.hidden) return;
+  fetch('/api/online', { cache: 'no-store' }).then(r => r.json()).then(j => { const n = j.players | 0; $('onlineN').textContent = n ? `${n} pemain online` : 'Semua orang'; $('modeOnline').classList.toggle('live', n > 0); }).catch(() => {});
+}
+pollOnline(); setInterval(pollOnline, 8000);
 $('backBtn').onclick = () => show('mode');
 $('createBtn').onclick = () => { G.create = true; $('code').value = ''; $('joinBtn').click(); };
 $('code').addEventListener('keydown', e => e.stopPropagation());
@@ -974,19 +981,25 @@ $('addr').addEventListener('click', e => {
   catch { feed('Tekan lama untuk menyalin', 'info'); }
 });
 function renderLobby() {
-  const isHost = G.hostId === G.me;
+  const online = !!G.online, isHost = G.hostId === G.me && !online;
   $('plist').innerHTML = [...G.roster.values()].map(p =>
-    `<li class="${p.id === G.me ? 'me' : ''}">${godIcon(p.god)}<span class="nm">${esc(p.name)}</span>${p.wins ? `<span class="wins">${ico('crown')}${p.wins}</span>` : ''}${p.id === G.hostId ? '<span class="badge">HOST</span>' : ''}</li>`).join('');
+    `<li class="${p.id === G.me ? 'me' : ''}">${godIcon(p.god)}<span class="nm">${esc(p.name)}</span>${p.wins ? `<span class="wins">${ico('crown')}${p.wins}</span>` : ''}${p.id === G.hostId && !online ? '<span class="badge">HOST</span>' : ''}</li>`).join('');
   $('botN').textContent = G.botCount;
   $('diffRow').style.visibility = isHost ? 'visible' : 'hidden';
   for (const b of $('diffBtns').children) b.classList.toggle('on', +b.dataset.d === (G.diff ?? 1));
   $('botMinus').style.visibility = $('botPlus').style.visibility = isHost ? 'visible' : 'hidden';
+  $('botN').closest('.row').classList.toggle('hidden', online); $('diffRow').classList.toggle('hidden', online);
   $('startBtn').classList.toggle('hidden', !isHost || G.serverPhase !== 'lobby');
   const solo = G.mode === 'solo';
-  $('lobbyTitle').textContent = solo ? 'MAIN SENDIRI' : 'LOBBY';
+  $('lobbyTitle').textContent = solo ? 'MAIN SENDIRI' : online ? 'ONLINE' : 'LOBBY';
   $('addr').classList.toggle('hidden', solo);
   $('mapRow').classList.toggle('hidden', !solo || !isHost);
   const lan = G.addrs.filter(a => !a.includes('127.0.0.1'));
+  if (online) {
+    const n = [...G.roster.values()].filter(p => !p.bot).length;
+    $('addr').innerHTML = `${ico('users')} <b>${n}</b> pemain di room ini · <b>${Math.max(n, G.onlineN)}</b> online<br><span class="sub">Kursi kosong diisi bot. Game mulai sendiri.</span>`;
+    tickAutoNote(); return;
+  }
   $('addr').innerHTML = lan.length
     ? `Teman membuka alamat ini di browser (ketuk untuk menyalin):<br>${lan.map(a => `<b class="cp" data-cp="${esc(a)}">${esc(a)}</b>`).join('<br>')}` + (G.code ? `<br>Kode room: <b>${esc(G.code)}</b>` : '')
     : 'Alamat WiFi tidak ditemukan. Sambungkan komputer ke WiFi.';
@@ -994,11 +1007,20 @@ function renderLobby() {
     : solo || isHost ? '' : 'Menunggu host memulai...';
 }
 
+// hitung mundur lobby online
+function tickAutoNote() {
+  if (!G.online || G.phase !== 'lobby') return;
+  const left = G.autoAt ? Math.ceil((G.autoAt - serverNow()) / 1000) : 0;
+  $('lobbyNote').innerHTML = G.serverPhase !== 'lobby' ? 'Game sedang berlangsung. Kamu ikut game berikutnya.' : left > 0 ? `Game mulai dalam <b class="cd${left <= 5 ? ' hot' : ''}">${left}</b> detik` : 'Memulai game...';
+  if (left > 0 && left <= 3 && left !== G.autoBeep) { G.autoBeep = left; beep(660 + (3 - left) * 120, 0.08, 'triangle', 0.05); }
+}
+setInterval(tickAutoNote, 250);
+
 // ------------------------------------------------------------ jaringan
 function connect(name) {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
   ws.onerror = () => { $('err').className = ''; $('err').textContent = 'Tidak bisa terhubung ke server game. Pastikan server masih berjalan.'; };
-  ws.onopen = () => { const code = G.code || $('code').value.trim(); send({ t: 'join', name, god: G.god, skin: save.skin, trail: save.trail, mode: G.mode === 'solo' ? 'solo' : (G.create || code) ? 'room' : 'lan', code, create: !!G.create }); G.create = false; ping(); };
+  ws.onopen = () => { const code = G.code || $('code').value.trim(); send({ t: 'join', name, god: G.god, skin: save.skin, trail: save.trail, mode: G.mode === 'solo' ? 'solo' : G.mode === 'online' ? 'online' : (G.create || code) ? 'room' : 'lan', code: G.mode === 'online' ? '' : code, create: !!G.create }); G.create = false; ping(); };
   ws.onmessage = ev => {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
@@ -1030,7 +1052,7 @@ const ON = {
   lobby(m) {
     G.roster = new Map(m.players.map(p => [p.id, p]));
     const hostChanged = G.hostId !== m.hostId;
-    G.hostId = m.hostId; G.botCount = m.botCount; G.serverPhase = m.phase; G.diff = m.diff;
+    G.hostId = m.hostId; G.botCount = m.botCount; G.serverPhase = m.phase; G.diff = m.diff; G.online = !!m.online; G.autoAt = m.autoAt || 0; G.onlineN = m.onlineN || 0;
     if (m.phase === 'lobby' && G.phase !== 'lobby') { G.phase = 'lobby'; show('lobby'); enterLobbyScene(); }
     else if (G.phase === 'menu' && G.me) { G.phase = 'lobby'; show('lobby'); enterLobbyScene(); }
     if (G.phase === 'lobby') syncLobbyEnts();
@@ -2209,7 +2231,7 @@ Promise.allSettled([loadGodAssets().then(r => { loadPct(70); return r; }), loadP
   loadPct(100); $('loading').classList.add('ready'); setTimeout(() => $('loading').classList.add('done'), 650);
   if (rs.some(r => r.status !== 'fulfilled')) $('loadTxt').textContent = 'Sebagian aset gagal dimuat — game tetap jalan dengan tampilan sederhana.'; report('assets ' + rs.map(r => r.status + (r.reason ? ' ' + (r.reason.stack || r.reason) : '')).join(' | ')); makePortraits(); renderGods(); if (G.me) renderLobby(); if (G.phase === 'menu') buildPreview(); });
 if (QS.has('auto')) {
-  pickMode(QS.get('mode') === 'solo' ? 'solo' : 'lan');
+  pickMode(['solo', 'online'].includes(QS.get('mode')) ? QS.get('mode') : 'lan');
   $('name').value = 'Tester';
   if (QS.has('god') && GODS.some(g => g.id === QS.get('god'))) G.god = QS.get('god');
   setTimeout(() => $('joinBtn').click(), 1200);
@@ -2231,5 +2253,5 @@ if (QS.has('voxtest')) (async () => {
   }
   report('voxtest ' + res.join(' | '));
 })().catch(err => report('voxtest ERR ' + (err.stack || err)));
-if (QS.has('ui')) { pickMode(QS.get('mode') === 'solo' ? 'solo' : 'lan'); const tb = $('tabs').querySelector(`[data-tab="${QS.get('ui')}"]`); if (tb) tb.click(); if (QS.get('ui') === 'all') { let i = 0; setInterval(() => $('tabs').children[++i % 3].click(), shot.every); } }
+if (QS.has('ui')) { pickMode(['solo', 'online'].includes(QS.get('mode')) ? QS.get('mode') : 'lan'); const tb = $('tabs').querySelector(`[data-tab="${QS.get('ui')}"]`); if (tb) tb.click(); if (QS.get('ui') === 'all') { let i = 0; setInterval(() => $('tabs').children[++i % 3].click(), shot.every); } }
 requestAnimationFrame(frame);

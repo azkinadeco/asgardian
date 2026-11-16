@@ -33,6 +33,7 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  if (u === '/api/online') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ players: onlineCount() })); }
   if (u === '/') u = '/index.html';
   let base = PUB, rel = u;
   if (u.startsWith('/vendor/')) { base = VENDOR; rel = u.slice(7); }
@@ -72,6 +73,14 @@ const POOLS = [[0, 3, 4, 6, 8, 10], [1, 5, 9], [2, 7, 11]];       // ronde 1: ba
 const wins = new Map();              // nama -> jumlah mahkota
 const GOD_IDS = ['zeus', 'poseidon', 'athena', 'hades', 'apollo', 'ares', 'hermes', 'thor', 'loki', 'odin'];
 const INTRO_MS = 6000;
+// mode online: pemain dikumpulkan otomatis ke room publik yang sedang menunggu
+const ONLINE_MAX = 12;       // pemain manusia per room online
+const ONLINE_FILL = 10;      // kursi diisi bot sampai jumlah ini
+const ONLINE_WAIT = [30, 20, 12]; // detik tunggu: sendirian, 2+ pemain, 6+ pemain
+const MAX_PER_IP = 16;       // koneksi per alamat (cegah banjir koneksi; satu WiFi sekolah/rumah bisa berbagi alamat)
+// nama kasar diganti nama netral (game ini dimainkan anak-anak juga)
+const BAD = ['anjing', 'anjg', 'bangsat', 'bgst', 'kontol', 'memek', 'ngentot', 'ngewe', 'jembut', 'pepek', 'bajingan', 'goblok', 'tolol', 'jancok', 'jancuk', 'fuck', 'shit', 'bitch', 'pussy', 'nigg', 'porn']; // hanya kata yang jelas, supaya nama biasa (mis. Asuka, Mentari) tidak ikut tersaring
+const cleanName = n => { const k = n.toLowerCase().replace(/[^a-z]/g, '').replace(/0/g, 'o').replace(/1/g, 'i'); return BAD.some(w => k.includes(w)) ? '' : n; };
 
 // Simulasi bot berjalan di server (memakai modul fisika yang sama dengan browser),
 // jadi bot tetap bergerak walau tab host disembunyikan.
@@ -105,6 +114,7 @@ function send(ws, m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m))
 function createRoom(roomId, opts = {}) {
   const players = new Map(); // id -> {id,name,god,bot,ws,state}
   let score = {}; // poin per game untuk papan skor akhir
+  let autoAt = 0, autoTimer = null;
   let hostId = null, phase = 'lobby', botCount = opts.solo ? 7 : 5, round = null, timers = [], plan = [0, 1, 2], diff = 1; // diff: 0 mudah, 1 normal, 2 sulit
 
   function broadcast(m) {
@@ -112,7 +122,17 @@ function createRoom(roomId, opts = {}) {
     for (const p of players.values()) if (p.ws && p.ws.readyState === 1) p.ws.send(s);
   }
   function roster() { return [...players.values()].map(p => ({ id: p.id, name: p.name, god: p.god, skin: p.skin || 'default', trail: p.trail || 'asli', bot: !!p.bot, wins: wins.get(p.name) || 0 })); }
-  function lobbyMsg() { broadcast({ t: 'lobby', players: roster(), hostId, botCount, phase, diff }); }
+  function lobbyMsg() { broadcast({ t: 'lobby', players: roster(), hostId, botCount, phase, diff, online: !!opts.online, autoAt, onlineN: opts.online ? onlineCount() : 0 }); }
+  // online: game mulai sendiri. Hitung mundur hanya dipercepat (tidak pernah diperpanjang) saat pemain bertambah
+  function scheduleAuto() {
+    if (!opts.online || phase !== 'lobby') return;
+    const n = humans().length;
+    if (!n) { clearTimeout(autoTimer); autoTimer = null; autoAt = 0; return; }
+    const at = Date.now() + (n >= ONLINE_MAX ? 3 : n >= 6 ? ONLINE_WAIT[2] : n >= 2 ? ONLINE_WAIT[1] : ONLINE_WAIT[0]) * 1000;
+    if (autoAt && autoAt <= at) return;
+    autoAt = at; clearTimeout(autoTimer);
+    autoTimer = setTimeout(() => { autoTimer = null; autoAt = 0; if (phase === 'lobby' && humans().length) { botCount = Math.max(0, Math.min(8, ONLINE_FILL - humans().length)); startGame(); } }, at - Date.now());
+  }
   function humans() { return [...players.values()].filter(p => !p.bot); }
   function later(fn, ms) {
     const h = setTimeout(() => { timers = timers.filter(x => x !== h); fn(); }, ms);
@@ -125,11 +145,13 @@ function createRoom(roomId, opts = {}) {
     for (const p of [...players.values()]) if (p.bot) players.delete(p.id);
     phase = 'lobby'; round = null;
     for (const p of players.values()) p.state = null;
+    scheduleAuto();
     lobbyMsg();
   }
 
   function startGame(forced) {
     if (phase !== 'lobby') return;
+    clearTimeout(autoTimer); autoTimer = null; autoAt = 0;
     plan = POOLS.map(pool => pool[(Math.random() * pool.length) | 0]);
     // mode latihan (main sendiri) atau mode tes: mainkan satu map pilihan
     if ((DEBUG || opts.solo) && Number.isInteger(forced) && MAPS[forced]) plan = [forced];
@@ -312,14 +334,15 @@ function createRoom(roomId, opts = {}) {
     join(ws, m) {
       if (ws.pid) return;
       const id = 'p' + nextId++;
-      const name = String(m.name || '').replace(/[<>&"]/g, '').trim().slice(0, 14) || 'Dewa ' + id.slice(1);
+      const name = cleanName(String(m.name || '').replace(/[<>&"]/g, '').trim().slice(0, 14)) || 'Dewa ' + id.slice(1);
       const god = GOD_IDS.includes(m.god) ? m.god : 'zeus';
       const skin = ['default', 'es', 'mawar', 'laut', 'api', 'bayangan', 'emas', 'kerajaan', 'legenda'].includes(m.skin) ? m.skin : 'default';
       const trail = ['asli', 'emas', 'api', 'es', 'alam', 'pelangi', 'bintang'].includes(m.trail) ? m.trail : 'asli';
       players.set(id, { id, name, god, skin, trail, bot: false, ws, state: null });
       ws.pid = id;
       if (!hostId || !players.has(hostId)) hostId = id;
-      send(ws, { t: 'welcome', id, addrs: opts.solo ? [] : lanAddrs(), mode: opts.solo ? 'solo' : 'lan', code: opts.code || null, debug: DEBUG });
+      send(ws, { t: 'welcome', id, addrs: opts.solo || opts.online ? [] : lanAddrs(), mode: opts.solo ? 'solo' : opts.online ? 'online' : 'lan', code: opts.code || null, debug: DEBUG });
+      scheduleAuto();
       lobbyMsg();
     },
     ping(ws, m) { send(ws, { t: 'pong', c: m.c, s: Date.now() }); },
@@ -329,12 +352,12 @@ function createRoom(roomId, opts = {}) {
       p.emoAt = now; broadcast({ t: 'emo', id: p.id, k: Math.max(0, Math.min(7, m.k | 0)) });
     },
     bots(ws, m) {
-      if (ws.pid !== hostId || phase !== 'lobby') return;
+      if (opts.online || ws.pid !== hostId || phase !== 'lobby') return;
       botCount = Math.max(opts.solo ? 1 : 0, Math.min(11, m.n | 0));
       lobbyMsg();
     },
-    diff(ws, m) { if (ws.pid === hostId && phase === 'lobby') { diff = Math.max(0, Math.min(2, m.d | 0)); lobbyMsg(); } },
-    start(ws, m) { if (ws.pid === hostId) startGame(m.level); },
+    diff(ws, m) { if (!opts.online && ws.pid === hostId && phase === 'lobby') { diff = Math.max(0, Math.min(2, m.d | 0)); lobbyMsg(); } },
+    start(ws, m) { if (ws.pid === hostId && (!opts.online || DEBUG)) startGame(m.level); },
     s(ws, m) {
       if ((!round && phase !== 'lobby') || !ws.pid || !Array.isArray(m.e)) return;
       for (const a of m.e.slice(0, 24)) {
@@ -366,6 +389,7 @@ function createRoom(roomId, opts = {}) {
     if (!id || !players.has(id)) return;
     players.delete(id);
     if (!humans().length) { hostId = null; toLobby(); return; }
+    if (phase === 'lobby') scheduleAuto();
     if (hostId === id) hostId = humans()[0].id;
     lobbyMsg();
     checkRound();
@@ -382,24 +406,48 @@ function createRoom(roomId, opts = {}) {
   return {
     id: roomId, H, leave,
     humanCount: () => humans().length,
+    refresh: () => lobbyMsg(),
+    online: !!opts.online, joinable: () => phase === 'lobby' && humans().length < ONLINE_MAX,
     size: () => players.size,
-    destroy() { clearTimers(); clearInterval(botTick); clearInterval(snapTick); },
+    destroy() { clearTimers(); clearTimeout(autoTimer); clearInterval(botTick); clearInterval(snapTick); },
   };
 }
 
 const rooms = new Map();
 rooms.set('lan', createRoom('lan'));
 
+function onlineCount() { let n = 0; for (const r of rooms.values()) if (r.online) n += r.humanCount(); return n; }
+// room online yang sedang menunggu; pilih yang paling ramai supaya pemain cepat berkumpul
+let onlineSeq = 1;
+function findOnlineRoom() {
+  let best = null;
+  for (const r of rooms.values()) if (r.online && r.joinable() && (!best || r.humanCount() > best.humanCount())) best = r;
+  if (best) return best;
+  const id = 'O' + onlineSeq++, r = createRoom(id, { online: true }); rooms.set(id, r); return r;
+}
+// kabari lobby online lain tiap beberapa detik soal jumlah pemain online
+setInterval(() => { for (const r of rooms.values()) if (r.online && r.joinable() && r.humanCount()) r.refresh(); }, 5000);
+
+const ipCount = new Map();
 const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
+  // di balik hosting (proxy), alamat asli ada di X-Forwarded-For
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!/^(::1|127\.|::ffff:127\.)/.test(ip) && (ipCount.get(ip) || 0) >= MAX_PER_IP) { ws.close(1013, 'terlalu banyak koneksi'); return; }
+  ipCount.set(ip, (ipCount.get(ip) || 0) + 1);
+  ws.on('close', () => { const n = (ipCount.get(ip) || 1) - 1; if (n > 0) ipCount.set(ip, n); else ipCount.delete(ip); });
+  let budget = 60, budgetAt = Date.now(); // maksimal ±60 pesan per detik per pemain
   ws.on('message', raw => {
+    const now = Date.now(); budget = Math.min(60, budget + (now - budgetAt) * 0.06); budgetAt = now;
+    if ((budget -= 1) < 0) return;
     let m;
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m.t !== 'string') return;
     if (!ws.room) {
       if (m.t === 'ping') return send(ws, { t: 'pong', c: m.c, s: Date.now() });
       if (m.t !== 'join') return;
-      if (m.mode === 'solo') { const id = 'solo' + nextId++; ws.room = createRoom(id, { solo: true }); rooms.set(id, ws.room); }
+      if (m.mode === 'online') ws.room = findOnlineRoom();
+      else if (m.mode === 'solo') { const id = 'solo' + nextId++; ws.room = createRoom(id, { solo: true }); rooms.set(id, ws.room); }
       else if (m.mode === 'room') {
         // room privat berkode 4 huruf (dipakai di WiFi sekarang, dan untuk online nanti)
         let code = String(m.code || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);

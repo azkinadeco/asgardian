@@ -19,7 +19,7 @@ Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bis
 ## Mode
 - **Main Sendiri** — ruang pribadi berisi bot (jumlah dan tingkat kesulitan bisa diatur).
 - **Main Bareng** — semua pemain di WiFi yang sama masuk ke ruang yang sama. Bisa juga membuat room privat berkode 4 huruf (Buat room) dan membagikan kodenya.
-- **Online** — belum ada; server sudah mendukung beberapa ruang (`createRoom` di `server.js`), tinggal ditambah ruang berkode dan hosting.
+- **Main Online** — semua orang yang sedang membuka game di server yang sama dikumpulkan otomatis ke room publik (maksimal 12 pemain per room, kursi kosong diisi bot sampai 10). Tidak ada host: game mulai sendiri setelah hitung mundur (30 detik kalau sendirian, 20 detik kalau 2+ pemain, 12 detik kalau 6+ pemain). Pemain yang datang saat game berlangsung masuk room baru yang sedang menunggu. Tombol mode menampilkan jumlah pemain online (`/api/online`).
 
 ## Struktur
 - `server.js` — server file + WebSocket: lobby, ronde, simulasi bot, kekuatan dewa, apel emas.
@@ -56,6 +56,13 @@ Karakter bersuara seruan pendek yang lucu ("ah!", "aw~", "noo", "yes!", "yay!", 
 
 ## Font
 Tulisan memakai Fredoka (SIL Open Font License 1.1, `public/assets/fonts/OFL.txt`), dibundel di `public/assets/fonts` supaya tetap tampil tanpa internet.
+
+## Rilis online (hosting)
+Supaya orang dari mana saja bisa main bareng, server harus berjalan di internet:
+1. **Render (gratis, paling mudah):** buat akun di render.com → *New* → *Blueprint* → pilih repo GitHub ini. `render.yaml` sudah mengatur semuanya. Setelah jadi, bagikan alamat `https://asgardian-xxxx.onrender.com`. Paket gratis tidur setelah 15 menit tanpa pemain, jadi pembukaan pertama bisa butuh ±1 menit.
+2. **Hosting lain (Railway, Fly.io, VPS):** pakai `Dockerfile` yang ada, atau jalankan `npm ci --omit=dev && node server.js`. Port diambil dari variabel `PORT`. Butuh Node 20.6 ke atas.
+- Hosting wajib HTTPS; game otomatis memakai `wss://`.
+- Pengaman untuk publik: maksimal 16 koneksi per alamat IP, batas ±60 pesan per detik per pemain, nama kasar diganti nama netral, mode tes (`DEBUG`) jangan dinyalakan di server publik.
 
 ## Menuju APK / app
 Game ini butuh server. Untuk dirilis sebagai app: taruh `server.js` di hosting (HTTPS/WSS), lalu bungkus folder `public` dengan Capacitor (Android/iOS) yang mengarah ke alamat server tersebut.
