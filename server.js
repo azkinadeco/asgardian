@@ -39,11 +39,15 @@ const server = http.createServer((req, res) => {
   else if (u.startsWith('/jsm/')) { base = JSM; rel = u.slice(4); }
   const file = path.join(base, path.normalize(rel));
   if (!file.startsWith(base)) { res.writeHead(403); return res.end(); }
+  // ETag dari ukuran + waktu ubah: HP cukup bertanya "masih sama?" lalu memakai salinan lamanya (304), tanpa unduh ulang
+  let st; try { st = fs.statSync(file); } catch { st = null; }
+  const etag = st && st.isFile() ? `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"` : null;
+  if (etag && req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' }); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     // modul contoh three.js mengimpor 'three' -> arahkan ke salinan yang sama dengan game
     if (base === JSM) data = data.toString().replace(/from 'three'/g, "from '/vendor/three.module.js'");
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', ...(etag && { ETag: etag }) });
     res.end(data);
   });
 });
@@ -315,7 +319,7 @@ function createRoom(roomId, opts = {}) {
       players.set(id, { id, name, god, skin, trail, bot: false, ws, state: null });
       ws.pid = id;
       if (!hostId || !players.has(hostId)) hostId = id;
-      send(ws, { t: 'welcome', id, addrs: opts.solo ? [] : lanAddrs(), mode: opts.solo ? 'solo' : 'lan', code: opts.code || null });
+      send(ws, { t: 'welcome', id, addrs: opts.solo ? [] : lanAddrs(), mode: opts.solo ? 'solo' : 'lan', code: opts.code || null, debug: DEBUG });
       lobbyMsg();
     },
     ping(ws, m) { send(ws, { t: 'pong', c: m.c, s: Date.now() }); },

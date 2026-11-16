@@ -8,6 +8,11 @@
 <title>Asgardian</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="description" content="Asgardian: party royale para dewa. Balapan, bertahan, dan rebut mahkota bersama teman di WiFi yang sama, langsung dari browser.">
+<meta property="og:title" content="Asgardian">
+<meta property="og:description" content="Party royale para dewa: lucu, cepat, dan seru dimainkan bareng.">
+<meta property="og:image" content="/icon-512.png">
 <link rel="preload" href="/assets/fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
 <meta name="theme-color" content="#1d1440">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -228,7 +233,8 @@ addEventListener('resize', __lay);
   @keyframes lvl { 0% { opacity:0; transform:translateY(-14px) scale(.6); } 12% { opacity:1; transform:scale(1.15); } 22% { transform:scale(1); } 85% { opacity:1; } 100% { opacity:0; transform:translateY(-8px); } }
   /* baris kabar dengan potret dewa; baris tentang dirimu bertepi emas */
   #feed div img { width:1.5em; height:1.5em; margin-left:-.5em; border-radius:50%; background:radial-gradient(circle at 50% 35%,#fff,#bfe3ff 60%,#8fbbec); }
-  #feed div.me { border:1px solid rgba(255,207,90,.7); background:rgba(70,48,20,.6); }
+  #feed div.me { border:1px solid rgba(255,207,90,.7); background:rgba(70,48,20,.6); animation:feedIn .25s ease-out, feedMe .5s ease-out .25s, feedOut .5s ease-in 4.2s forwards; }
+  @keyframes feedMe { 40% { transform:scale(1.08); } }
   #power .call { display:block; margin-top:2px; font-size:11px; font-style:italic; color:var(--gold2); }
   @keyframes low { 50% { background:rgba(150,26,40,.7); } }
   #count { gap:.25em; } #count b { color:var(--gold); font-weight:600; } #count i { font-style:normal; opacity:.35; margin:0 .2em; }
@@ -379,6 +385,7 @@ addEventListener('resize', __lay);
     background:conic-gradient(from calc(var(--a,0deg) - 32deg), rgba(255,230,160,.95) 0deg 64deg, transparent 64deg);
     -webkit-mask:radial-gradient(circle, transparent 66%, #000 68%, #000 76%, transparent 78%); mask:radial-gradient(circle, transparent 66%, #000 68%, #000 76%, transparent 78%); }
   #joy.act #joyDir { opacity:var(--m,1); }
+  #joy.max #knob { background:#fff; box-shadow:0 0 0 2px rgba(255,214,110,.9), 0 0 18px rgba(255,214,110,.7); }
 
   /* jatuh dari map */
   #fallFx { position:fixed; inset:0; z-index:1; pointer-events:none; opacity:0; background:radial-gradient(ellipse at center, rgba(10,6,30,0) 30%, rgba(10,6,30,.75) 100%); }
@@ -413,6 +420,17 @@ addEventListener('resize', __lay);
   #vig[data-m=eerie] { background:radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(60,20,90,.45) 100%); }
   @keyframes heat { 50% { opacity:.65; } }
   #vig.low { animation:vigLow 1s ease-in-out infinite; }
+  /* kurangi efek: tanpa kilat, garis laju, kilau tepi, dan layar abu-abu */
+  html.calm #speed, html.calm #flashFx, html.calm #hurt, html.calm #glow, html.calm #fallFx { display:none !important; } html.calm #c.out { filter:none; }
+  /* layar muat siap: lambang berputar sekali */
+  #loading.ready .crest { animation:crestSpin .6s cubic-bezier(.2,1.3,.4,1); } @keyframes crestSpin { 50% { transform:rotate(200deg) scale(1.15); filter:drop-shadow(0 0 14px rgba(255,214,110,.9)); } 100% { transform:rotate(360deg); } }
+  #loading.ready #loadTxt { color:var(--gold); }
+  /* suasana dingin: tepi layar sedikit berembun */
+  #vig[data-m=ice]::after { content:''; position:absolute; inset:0; background:radial-gradient(ellipse at center, rgba(0,0,0,0) 70%, rgba(255,255,255,.18) 100%); animation:frost 4s ease-in-out infinite; } @keyframes frost { 50% { opacity:.5; } }
+  html.calm #vig[data-m=ice]::after { animation:none; }
+  /* pesan error ramah */
+  #oops { position:fixed; z-index:60; left:50%; bottom:14px; transform:translateX(-50%); display:flex; align-items:center; gap:8px; padding:8px 8px 8px 14px; border-radius:14px; background:rgba(26,18,58,.92); color:#fff; font-size:13px; box-shadow:0 4px 18px rgba(0,0,0,.35); animation:feedIn .3s ease-out; }
+  #oops button { border:0; border-radius:9px; padding:6px 10px; background:var(--gold); color:#2a1e4a; font:inherit; font-weight:700; } #oops button.x { background:rgba(255,255,255,.15); color:#fff; padding:6px 9px; }
   /* koneksi lambat */
   #top #netWarn { color:#ffb36b; animation:low 1.4s ease-in-out infinite; }
   /* kilat badai */
@@ -472,6 +490,9 @@ addEventListener('resize', __lay);
     border:2.5px solid rgba(255,255,255,.78); box-shadow:0 0 0 1.5px rgba(30,18,60,.28), inset 0 0 14px rgba(255,255,255,.2); transform:scale(var(--ts,1)); transform-origin:right bottom; }
   .tbtn svg { width:56%; height:56%; fill:none; stroke:#fff; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 1.5px 1.5px rgba(20,12,44,.6)); pointer-events:none; }
   .tbtn svg .f { fill:#fff; stroke:none; }
+  .tbtn::after { content:''; position:absolute; inset:-3px; border-radius:50%; border:2px solid rgba(255,255,255,.8); opacity:0; pointer-events:none; }
+  .tbtn:active::after { animation:tRip .35s ease-out; } @keyframes tRip { from { opacity:.9; transform:scale(.9); } to { opacity:0; transform:scale(1.35); } }
+  html.calm .tbtn:active::after { animation:none; }
   .tbtn:active { transform:scale(calc(var(--ts,1) * .93)); box-shadow:0 0 0 1.5px rgba(30,18,60,.28), inset 0 0 22px rgba(255,255,255,.6); }
   #btnJump { right:max(20px,env(safe-area-inset-right)); bottom:max(26px,env(safe-area-inset-bottom)); width:92px; height:92px; background:rgba(242,169,59,.34); border-color:rgba(255,224,150,.9); }
   #btnDive { right:calc(max(20px,env(safe-area-inset-right)) + 104px); bottom:max(22px,env(safe-area-inset-bottom)); width:70px; height:70px; background:rgba(90,110,255,.34); border-color:rgba(190,200,255,.9); }
@@ -566,6 +587,7 @@ addEventListener('resize', __lay);
   <div class="row"><span>Balik kamera atas-bawah</span><input id="optI" type="checkbox"></div>
   <div class="row"><span>Hemat baterai (30 fps)</span><input id="optC" type="checkbox"></div>
   <div class="row"><span>Tampilkan fps</span><input id="optF" type="checkbox"></div>
+  <div class="row"><span>Kurangi efek layar</span><input id="optCalm" type="checkbox"></div>
   <button id="fsBtn" class="btn ghost" style="font-size:12.5px;padding:7px;margin-top:8px">Layar penuh</button>
 </div>
 <div id="confirm" class="hidden"><div class="box"><div id="confirmTxt"></div><div class="acts"><button id="confirmNo" class="btn ghost">Batal</button><button id="confirmYes" class="btn">Keluar</button></div></div></div>
@@ -581,7 +603,7 @@ addEventListener('resize', __lay);
       <button class="mbtn" id="modeSolo"><svg class="ico"><use href="#i-user"/></svg><b>Main Sendiri</b><span>Lawan bot</span></button>
       <button class="mbtn alt" id="modeLan"><svg class="ico"><use href="#i-users"/></svg><b>Main Bareng</b><span>WiFi yang sama</span></button>
     </div>
-    <div class="credit">© ONIX Studio</div>
+    <div class="credit">© ONIX Studio · v1.0.0</div>
   </div>
 </div>
 
@@ -661,6 +683,13 @@ addEventListener('resize', __lay);
 </div>
 
 </div>
+<script>
+// perangkat/browser tanpa WebGL: tampilkan penjelasan, jangan layar muat yang diam selamanya
+(function () { var ok = false; try { var c = document.createElement('canvas'); ok = !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))); } catch (e) {}
+  if (!ok) { var t = document.getElementById('loadTxt'); if (t) t.textContent = 'Browser ini belum mendukung grafik 3D (WebGL). Coba Chrome atau Safari terbaru.'; var f = document.getElementById('loadFill'); if (f && f.parentNode) f.parentNode.style.display = 'none'; } })();
+// modul tidak termuat sama sekali (browser lama): beri tahu setelah 12 detik
+setTimeout(function () { var l = document.getElementById('loading'); var t = document.getElementById('loadTxt'); if (l && !l.classList.contains('done') && !l.classList.contains('ready') && t && /Memuat/.test(t.textContent) && !window.__asgOk) t.textContent = 'Masih memuat… kalau lama, pastikan WiFi tersambung lalu muat ulang.'; }, 12000);
+</script>
 <script type="module" src="/js/main.js"></script>
 </body>
 </html>

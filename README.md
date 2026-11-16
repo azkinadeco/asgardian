@@ -2,6 +2,14 @@
 
 Party royale para dewa: 3 ronde eliminasi, multiplayer lewat WiFi yang sama, bisa dimainkan di browser PC, Android, dan iOS.
 
+**Versi 1.0.0** · © ONIX Studio
+
+## Cara main
+- Pilih dewa, lalu lolos dari tiap ronde: **balapan** (sampai garis finis), **bertahan** (jangan jatuh), atau **kumpulkan apel emas**. Ronde terakhir: rebut **mahkota**.
+- **PC:** WASD/panah untuk bergerak, Spasi lompat, Shift/E/F menerjang, Q atau klik kanan kekuatan dewa, T stiker emot (angka 1–8 untuk memilih), seret mouse untuk memutar kamera.
+- **HP:** joystick kiri untuk bergerak, tombol kanan untuk lompat, menerjang, dan kekuatan. Game selalu tampil mendatar.
+- Di Pengaturan ada volume musik/efek/suara karakter, kualitas grafik, dan opsi **Kurangi efek layar** untuk yang mudah pusing.
+
 ## Menjalankan
 - Klik dua kali `start.command` (Mac), atau jalankan `npm install` sekali lalu `npm start`.
 - Di komputer: buka `http://localhost:3000`.
